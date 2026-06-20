@@ -40,6 +40,7 @@
  */
 
 const pool = require('../db');
+const { MILESTONE_TEMPLATES } = require('./deadlines');
 
 module.exports = async function toolsAuthRoutes(fastify) {
 
@@ -217,8 +218,6 @@ module.exports = async function toolsAuthRoutes(fastify) {
   // Uses access_codes table to identify the student, then proxies to
   // student_deadlines + deadline_milestones tables directly.
   // ═══════════════════════════════════════════════════════════════════
-
-  const { MILESTONE_TEMPLATES } = require('./deadlines');
 
   // Shared: resolve access code → student id
   async function resolveStudent(code) {

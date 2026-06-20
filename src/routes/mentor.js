@@ -8,21 +8,36 @@ const APP_KEY = {
   ess:     { ia: 'ess_ia',     ee: 'ess_ee',     tok: 'ess_tok'     },
 };
 
-// Gemini pricing per token (USD)
+// Gemini pricing per token (USD) — updated June 2026
+// Falls back to gemini-2.5-flash pricing for unknown/future models
 const GEMINI_PRICING = {
-  'gemini-2.0-flash':      { input: 0.10 / 1_000_000, output: 0.40 / 1_000_000 },
-  'gemini-2.0-flash-exp':  { input: 0.10 / 1_000_000, output: 0.40 / 1_000_000 },
-  'gemini-1.5-flash':      { input: 0.075 / 1_000_000, output: 0.30 / 1_000_000 },
-  'gemini-1.5-flash-8b':   { input: 0.0375 / 1_000_000, output: 0.15 / 1_000_000 },
-  'gemini-1.5-pro':        { input: 1.25 / 1_000_000, output: 5.00 / 1_000_000 },
-  'gemini-2.5-pro':        { input: 1.25 / 1_000_000, output: 10.00 / 1_000_000 },
+  // Gemini 3.x (latest — prices estimated, update when Google publishes)
+  'gemini-3.5-flash':       { input: 0.10  / 1_000_000, output: 0.40  / 1_000_000 },
+  'gemini-3.1-pro':         { input: 1.25  / 1_000_000, output: 10.00 / 1_000_000 },
+  'gemini-3.1-flash':       { input: 0.10  / 1_000_000, output: 0.40  / 1_000_000 },
+  'gemini-3.1-flash-lite':  { input: 0.025 / 1_000_000, output: 0.10  / 1_000_000 },
+  // Gemini 2.5
+  'gemini-2.5-pro':         { input: 1.25  / 1_000_000, output: 10.00 / 1_000_000 },
+  'gemini-2.5-pro-preview': { input: 1.25  / 1_000_000, output: 10.00 / 1_000_000 },
+  'gemini-2.5-flash':       { input: 0.075 / 1_000_000, output: 0.30  / 1_000_000 },
+  'gemini-2.5-flash-lite':  { input: 0.025 / 1_000_000, output: 0.10  / 1_000_000 },
+  // Gemini 2.0
+  'gemini-2.0-flash':       { input: 0.10  / 1_000_000, output: 0.40  / 1_000_000 },
+  'gemini-2.0-flash-exp':   { input: 0.10  / 1_000_000, output: 0.40  / 1_000_000 },
+  'gemini-2.0-flash-lite':  { input: 0.025 / 1_000_000, output: 0.10  / 1_000_000 },
+  // Gemini 1.5 (legacy)
+  'gemini-1.5-pro':         { input: 1.25  / 1_000_000, output: 5.00  / 1_000_000 },
+  'gemini-1.5-flash':       { input: 0.075 / 1_000_000, output: 0.30  / 1_000_000 },
+  'gemini-1.5-flash-8b':    { input: 0.0375/ 1_000_000, output: 0.15  / 1_000_000 },
 };
+// Default pricing for unknown/future models (use flash-tier estimate)
+const GEMINI_PRICING_DEFAULT = { input: 0.10 / 1_000_000, output: 0.40 / 1_000_000 };
 
 const INR_RATE = 84; // approximate USD → INR conversion
 const MONTHLY_TOKEN_CAP = 500_000; // soft limit per student per calendar month
 
 function computeCost(model, inputTokens, outputTokens) {
-  const p = GEMINI_PRICING[model] || GEMINI_PRICING['gemini-2.0-flash'];
+  const p = GEMINI_PRICING[model] || GEMINI_PRICING_DEFAULT;
   return parseFloat(((inputTokens * p.input) + (outputTokens * p.output)).toFixed(6));
 }
 
@@ -267,35 +282,20 @@ module.exports = async function mentorRoutes(app) {
     const appsRes = await pool.query(`
       SELECT
         l.app,
-        COUNT(*)::int                        AS sessions,
-        SUM(l.total_tokens)::int             AS total_tokens,
-        ROUND(SUM(l.cost_usd)::numeric, 6)   AS cost_usd,
-        ROUND(SUM(l.cost_usd * ${INR_RATE})::numeric, 2) AS cost_inr,
-        COUNT(DISTINCT l.student_id)::int    AS unique_students
+        COUNT(*)::int                                AS total_calls,
+        SUM(l.total_tokens)::int                     AS total_tokens,
+        ROUND(SUM(l.cost_usd)::numeric, 4)           AS cost_usd,
+        ROUND((SUM(l.cost_usd) * $3)::numeric, 2)    AS cost_inr
       FROM ai_usage_log l
-      ${where}
+      WHERE l.created_at BETWEEN $1 AND $2
       GROUP BY l.app
       ORDER BY cost_usd DESC
-    `, params);
+    `, [from, to, INR_RATE]);
 
-    // Overall summary
-    const totalRes = await pool.query(`
-      SELECT
-        COUNT(*)::int                        AS total_sessions,
-        COUNT(DISTINCT l.student_id)::int    AS unique_students,
-        COALESCE(SUM(l.total_tokens),0)::int AS total_tokens,
-        ROUND(COALESCE(SUM(l.cost_usd),0)::numeric, 6) AS total_cost_usd,
-        ROUND(COALESCE(SUM(l.cost_usd * ${INR_RATE}),0)::numeric, 2) AS total_cost_inr
-      FROM ai_usage_log l
-      ${where}
-    `, params);
-
-    return {
-      summary:  totalRes.rows[0],
-      by_app:   appsRes.rows,
+    return reply.send({
       students: studentsRes.rows,
-      sessions: sessionsRes.rows,
-      inr_rate: INR_RATE,
-    };
+      apps:     appsRes.rows,
+      from, to,
+    });
   });
 };

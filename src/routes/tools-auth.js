@@ -40,7 +40,7 @@
  */
 
 const pool = require('../db');
-const { MILESTONE_TEMPLATES } = require('./deadlines');
+const { MILESTONE_TEMPLATES } = require('./milestone-templates');
 
 module.exports = async function toolsAuthRoutes(fastify) {
 

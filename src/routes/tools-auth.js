@@ -231,7 +231,7 @@ module.exports = async function toolsAuthRoutes(fastify) {
   }
 
   // POST /deadlines/tool — create deadline + milestones
-  fastify.post('/deadlines/tool', async (req, reply) => {
+  fastify.post('/tools/deadlines', async (req, reply) => {
     const { code, assessment_type, subject, title, school_deadline } = req.body || {};
     if (!code) return reply.code(400).send({ error: 'code required' });
     const student = await resolveStudent(code);
@@ -278,7 +278,7 @@ module.exports = async function toolsAuthRoutes(fastify) {
   });
 
   // GET /deadlines/tool?code=IBH-XXXX-XXXX
-  fastify.get('/deadlines/tool', async (req, reply) => {
+  fastify.get('/tools/deadlines', async (req, reply) => {
     const { code } = req.query || {};
     if (!code) return reply.code(400).send({ error: 'code required' });
     const student = await resolveStudent(code);
@@ -295,7 +295,7 @@ module.exports = async function toolsAuthRoutes(fastify) {
   });
 
   // PATCH /deadlines/tool/milestones/:id
-  fastify.patch('/deadlines/tool/milestones/:id', async (req, reply) => {
+  fastify.patch('/tools/deadlines/milestones/:id', async (req, reply) => {
     const { code, is_completed } = req.body || {};
     if (!code) return reply.code(400).send({ error: 'code required' });
     const student = await resolveStudent(code);
@@ -315,7 +315,7 @@ module.exports = async function toolsAuthRoutes(fastify) {
   });
 
   // DELETE /deadlines/tool/:id
-  fastify.delete('/deadlines/tool/:id', async (req, reply) => {
+  fastify.delete('/tools/deadlines/:id', async (req, reply) => {
     const { code } = req.body || {};
     if (!code) return reply.code(400).send({ error: 'code required' });
     const student = await resolveStudent(code);

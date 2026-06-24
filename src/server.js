@@ -103,6 +103,19 @@ app.get('/api/health', async () => ({
   time: new Date(),
 }));
 
+// ── TEST ROUTE — fire deadline reminders manually ─────────────────
+// Visit: https://ibhighway-production.up.railway.app/api/test-deadline-cron
+// Remove this route after testing is confirmed working.
+app.get('/api/test-deadline-cron', async (req, reply) => {
+  const { sendDeadlineReminders } = require('./deadline-cron');
+  await sendDeadlineReminders();
+  return { ok: true, message: 'Cron ran — check Railway logs and your inbox' };
+});
+
+app.get('/api/routes', async () => {
+  return { routes: app.printRoutes() };
+});
+
 app.setErrorHandler((err, req, reply) => {
   req.log.error({ err }, 'request failed');
   if (reply.sent) return;

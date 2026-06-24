@@ -1,163 +1,110 @@
-// ── Twilio Deadline Reminder Cron ─────────────────────────────────────────────
+// ── Deadline Reminder Cron — Email via Resend ─────────────────────────────────
 // Runs daily at 09:00 AM IST (03:30 UTC).
-// Finds milestones due in exactly 3 days that are not completed and have not
-// already been called. Makes a Twilio TTS voice call to the student's registered
-// mobile number, then sends a WhatsApp follow-up message.
+// Finds milestones due in 7 days or 1 day, not completed, sends email reminder.
 //
 // Env vars required:
-//   TWILIO_ACCOUNT_SID   — from your Twilio console dashboard
-//   TWILIO_AUTH_TOKEN    — from your Twilio console dashboard
-//   TWILIO_FROM_NUMBER   — your purchased US number, e.g. +19786482829
+//   RESEND_API_KEY  — from resend.com dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-const cron = require('node-cron');
-const twilio = require('twilio');
-const pool  = require('./db');
+const cron   = require('node-cron');
+const pool   = require('./db');
+const { Resend } = (() => { try { return require('resend'); } catch { return {}; } })();
 
-// ── TWILIO DISABLED FOR TESTING — re-enable by removing the next line ──
-const CALL_ENABLED = false;
-// const CALL_ENABLED =
-//   process.env.TWILIO_ACCOUNT_SID &&
-//   process.env.TWILIO_AUTH_TOKEN  &&
-//   process.env.TWILIO_FROM_NUMBER;
+const EMAIL_ENABLED = !!(process.env.RESEND_API_KEY && Resend);
 
-function getTwilioClient() {
-  return twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-}
-
-// ── Format a date as "15th March 2025" for the TTS message ──────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function friendlyDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  return new Date(dateStr + 'T00:00:00')
+    .toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// ── Normalise phone to E.164 (+91XXXXXXXXXX) ─────────────────────────────────
-function toE164India(raw) {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('91') && digits.length === 12) return '+' + digits;
-  if (digits.length === 10) return '+91' + digits;
-  if (raw.startsWith('+'))  return raw; // already E.164
-  return null;
-}
-
-// ── Build the TwiML voice script ─────────────────────────────────────────────
-function buildTwiml(studentName, milestoneTitle, subjectLabel, dueDateStr, assessType) {
-  const due  = friendlyDate(dueDateStr);
-  const type = assessType === 'ia' ? 'I A' : assessType === 'ee' ? 'Extended Essay' : 'T O K Essay';
-  // Pause after greeting for natural feel. Alice en-IN gives Indian English accent.
-  return `<Response>
-  <Say voice="alice" language="en-IN">
-    Hello, ${studentName}.
-    <break time="0.4s"/>
-    This is a reminder from I B Highway.
-    <break time="0.3s"/>
-    Your milestone, ${milestoneTitle}, for your ${subjectLabel} ${type}
-    is due in 3 days, on ${due}.
-    <break time="0.5s"/>
-    Please log in to I B Highway to check your progress and mark it complete once done.
-    <break time="0.4s"/>
-    Good luck with your studies. Goodbye!
-  </Say>
-</Response>`;
-}
-
-// ── Build the WhatsApp pre-warning message (sent before the call) ────────────
-function buildWhatsAppMessage(studentName, milestoneTitle, subjectLabel, dueDateStr, assessType) {
-  const due  = friendlyDate(dueDateStr);
-  const type = assessType === 'ia' ? 'IA' : assessType === 'ee' ? 'Extended Essay' : 'TOK Essay';
-  return (
-    `📅 *IBHighway Deadline Reminder*\n\n` +
-    `Hi ${studentName}! Your milestone *"${milestoneTitle}"* for your ` +
-    `*${subjectLabel} ${type}* is due in *3 days* (${due}).\n\n` +
-    `Log in to check your progress: https://ibhighway.com/deadlines\n\n` +
-    `_You will receive a brief reminder call in the next few minutes from our US number. Please pick up!_`
-  );
+function buildEmailHtml(studentName, milestoneTitle, subject, dueDateStr, assessType, daysLeft) {
+  const due      = friendlyDate(dueDateStr);
+  const urgency  = daysLeft === 1 ? '🚨 Due Tomorrow' : '⏰ Due in 7 Days';
+  const typeLabel = assessType === 'ia' ? 'IA' : assessType === 'ee' ? 'Extended Essay' : 'TOK';
+  return `
+    <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <div style="background:#0f172a;border-radius:12px;padding:20px 24px;margin-bottom:16px">
+        <div style="font-size:1.1rem;font-weight:800;color:#fff">IB<span style="color:#60a5fa">Highway</span></div>
+        <div style="color:#94a3b8;font-size:.8rem;margin-top:2px">Deadline Reminder</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px">
+        <div style="font-size:.95rem;font-weight:700;color:#0f172a;margin-bottom:6px">${urgency}</div>
+        <div style="font-size:1.3rem;font-weight:800;color:#2563eb;margin-bottom:4px">${milestoneTitle}</div>
+        <div style="color:#64748b;font-size:.88rem;margin-bottom:16px">
+          ${subject} ${typeLabel} &nbsp;·&nbsp; Due <strong>${due}</strong>
+        </div>
+        <a href="https://ibhighway.com/tools/deadline/index.html"
+           style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,#0d9488,#ea580c);
+                  color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:.88rem">
+          Open Deadline Calendar →
+        </a>
+      </div>
+      <div style="color:#94a3b8;font-size:.72rem;margin-top:16px;text-align:center">
+        IBHighway · <a href="https://ibhighway.com" style="color:#94a3b8">ibhighway.com</a>
+        · To stop reminders, remove this assessment from your Deadline Calendar.
+      </div>
+    </div>`;
 }
 
 // ── Core reminder function ────────────────────────────────────────────────────
 async function sendDeadlineReminders() {
-  if (!CALL_ENABLED) {
-    console.log('[DeadlineCron] Twilio not configured — skipping reminder calls.');
+  if (!EMAIL_ENABLED) {
+    console.log('[DeadlineCron] RESEND_API_KEY not set — skipping email reminders.');
     return;
   }
 
-  const client = getTwilioClient();
-  const from   = process.env.TWILIO_FROM_NUMBER;
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
-  // Find milestones due in 3 days, not completed, consent given, not already called
+  // Find milestones due in exactly 7 or 1 day, not completed, not already reminded
   const { rows } = await pool.query(`
     SELECT
-      m.id            AS milestone_id,
-      m.title         AS milestone_title,
+      m.id              AS milestone_id,
+      m.title           AS milestone_title,
       m.due_date,
+      (m.due_date - CURRENT_DATE)::int AS days_left,
       d.assessment_type,
       d.subject,
-      u.name          AS student_name,
-      u.phone         AS student_phone
+      u.name            AS student_name,
+      u.email           AS student_email
     FROM deadline_milestones m
     JOIN student_deadlines d ON m.deadline_id = d.id
     JOIN users u             ON d.student_id  = u.id
     WHERE
-      m.due_date      = (CURRENT_DATE + INTERVAL '3 days')::date
-      AND m.is_completed     = FALSE
-      AND m.reminder_called  = FALSE
-      AND d.is_active        = TRUE
-      AND u.call_consent     = TRUE
-      AND u.phone IS NOT NULL
+      (m.due_date - CURRENT_DATE) IN (7, 1)
+      AND m.is_completed    = FALSE
+      AND m.reminder_called = FALSE
+      AND d.is_active       = TRUE
+      AND u.email IS NOT NULL
+      AND u.email != ''
   `);
 
   console.log(`[DeadlineCron] Found ${rows.length} milestone(s) to remind.`);
 
   for (const row of rows) {
-    const phone = toE164India(row.student_phone);
-    if (!phone) {
-      console.warn(`[DeadlineCron] Invalid phone for student "${row.student_name}" — skipping.`);
-      continue;
-    }
-
     try {
-      // Step 1 — Send WhatsApp pre-warning (so they know to expect the call)
-      const waMessage = buildWhatsAppMessage(
-        row.student_name, row.milestone_title,
-        row.subject, row.due_date, row.assessment_type
-      );
-      await client.messages.create({
-        from: `whatsapp:${from}`,
-        to:   `whatsapp:${phone}`,
-        body: waMessage,
+      const daysLeft  = row.days_left;
+      const urgency   = daysLeft === 1 ? '🚨 Due Tomorrow' : '⏰ Due in 7 Days';
+      const emailSubj = `${urgency}: ${row.milestone_title} — ${row.subject}`;
+
+      await resend.emails.send({
+        from:    'IBHighway <reminders@ibhighway.com>',
+        to:      row.student_email,
+        subject: emailSubj,
+        html:    buildEmailHtml(
+          row.student_name, row.milestone_title,
+          row.subject, row.due_date, row.assessment_type, daysLeft
+        ),
       });
-      console.log(`[DeadlineCron] WhatsApp sent to ${row.student_name} (${phone})`);
 
-      // Step 2 — Wait 5 minutes, then make the voice call
-      // (setTimeout is fire-and-forget inside the loop — intentional)
-      setTimeout(async () => {
-        try {
-          const twiml = buildTwiml(
-            row.student_name, row.milestone_title,
-            row.subject, row.due_date, row.assessment_type
-          );
-          const call = await client.calls.create({
-            twiml,
-            to:   phone,
-            from,
-          });
-          console.log(`[DeadlineCron] Call initiated — SID: ${call.sid} — ${row.student_name} (${phone})`);
-        } catch (callErr) {
-          console.error(`[DeadlineCron] Voice call failed for ${row.student_name}:`, callErr.message);
-        }
-      }, 5 * 60 * 1000); // 5 minutes after WhatsApp message
-
-      // Step 3 — Mark milestone as reminded (prevents double-call if cron re-runs)
+      // Mark as reminded so we don't double-send
       await pool.query(
-        `UPDATE deadline_milestones
-         SET reminder_called=TRUE, reminder_called_at=NOW()
-         WHERE id=$1`,
+        `UPDATE deadline_milestones SET reminder_called=TRUE, reminder_called_at=NOW() WHERE id=$1`,
         [row.milestone_id]
       );
 
+      console.log(`[DeadlineCron] Email sent → ${row.student_email} (${row.milestone_title}, ${daysLeft}d)`);
     } catch (err) {
-      console.error(`[DeadlineCron] Error processing ${row.student_name}:`, err.message);
-      // Don't throw — continue with next student
+      console.error(`[DeadlineCron] Failed for ${row.student_email}:`, err.message);
     }
   }
 }

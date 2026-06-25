@@ -91,6 +91,7 @@ app.register(require('./routes/guidance-bookings'), { prefix: '/api/guidance-boo
 app.register(require('./routes/mentor'),        { prefix: '/api/mentor' });
 app.register(require('./routes/deadlines'),     { prefix: '/api/deadlines' });
 app.register(require('./routes/ia-autopsy'),    { prefix: '/api/ia-autopsy' });
+app.register(require('./routes/ia-diary'),      { prefix: '/api' });
 app.register(require('./routes/ee-compass'),    { prefix: '/api/ee-compass' });
 app.register(require('./routes/fbd-log'),       { prefix: '/api/fbd-log' });
 app.register(require('./routes/tool-log'),      { prefix: '/api/tool-log' });

@@ -151,7 +151,7 @@ module.exports = async function iaDiaryRoutes(app) {
 
     try {
       const prompt = getBrainstormPrompt(subject, turnCount || 0, conversationHistory || []);
-      const result = await callGemini(geminiKey, prompt, 800);
+      const result = await callGemini(geminiKey, prompt, 1500);
       return reply.send(result);
     } catch (e) {
       return reply.code(500).send({ error: e.message });

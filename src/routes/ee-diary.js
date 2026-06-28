@@ -1,6 +1,8 @@
 // ─── EE DIARY ROUTES ─────────────────────────────────────────────────────────
 // Prompts live here on Railway — never sent to the browser.
 // Student's own Gemini key is passed in the request body and never stored.
+// Per-question AI feedback: every question the student answers gets individual
+// targeted critique, not just stage-level overview.
 
 const MODELS = [
   { model: 'gemini-3.5-flash',      api: 'v1beta' },
@@ -12,7 +14,7 @@ const MODELS = [
   { model: 'gemini-2.5-flash-lite', api: 'v1beta' },
 ];
 
-async function callGemini(geminiKey, prompt, maxTokens = 1500) {
+async function callGemini(geminiKey, prompt, maxTokens = 2000) {
   for (const m of MODELS) {
     const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent?key=${geminiKey}`;
     try {
@@ -33,7 +35,8 @@ async function callGemini(geminiKey, prompt, maxTokens = 1500) {
       const d = await r.json();
       const text = d.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) continue;
-      return { text, model: m.model };
+      const tokensUsed = d.usageMetadata?.totalTokenCount || 0;
+      return { text, model: m.model, tokensUsed };
     } catch (e) {
       if (e.message?.includes('not found') || e.message?.includes('deprecated')) continue;
       throw e;
@@ -42,249 +45,222 @@ async function callGemini(geminiKey, prompt, maxTokens = 1500) {
   throw new Error('No compatible Gemini model found for your API key.');
 }
 
-// ─── ANCHOR ───────────────────────────────────────────────────────────────────
-// The RQ and hypothesis from Stage 1 are the "spine" — every stage after Stage 1
-// checks student work against these anchors.
+// ─── ANCHOR BLOCK ─────────────────────────────────────────────────────────────
+// The locked RQ from Stage 2 is the spine. Every stage checks against it.
 
-function getAnchorBlock(stageData) {
-  const s1 = (stageData || {});
-  const rq  = (s1.rq  || '').trim();
-  const hyp = (s1.hypothesis || '').trim();
+function getAnchorBlock(anchorData) {
+  const rq  = (anchorData?.rq  || '').trim();
+  const hyp = (anchorData?.hypothesis || '').trim();
+  const pathway = (anchorData?.pathway || '').trim();
   if (!rq) return '';
-  let block = `\nANCHOR (locked from Stage 1 — must not change):\nResearch Question: ${rq}`;
-  if (hyp) block += `\nInitial Hypothesis/Argument: ${hyp}`;
-  block += `\n\nIMPORTANT: Before giving section feedback, explicitly check whether the student's response is consistent with the locked RQ and hypothesis above. If you detect drift, contradiction, or inconsistency, name it clearly and specifically FIRST, before any other feedback.\n`;
+  let block = `\nLOCKED ANCHOR (must not change across stages):\nResearch Question: ${rq}`;
+  if (hyp) block += `\nHypothesis / Working Argument: ${hyp}`;
+  if (pathway) block += `\nPathway: ${pathway}`;
+  block += `\n\nBefore any other feedback, check explicitly: is the student's response consistent with the locked RQ above? If you detect drift, contradiction, or scope creep, name it specifically FIRST.\n`;
   return block;
 }
 
-// ─── SYSTEM PROMPTS PER STAGE ─────────────────────────────────────────────────
+// ─── SUBJECT CONTEXT ──────────────────────────────────────────────────────────
 
-function getSectionPrompt(subject, stage, studentInput, anchorData) {
-  const anchor = getAnchorBlock(anchorData);
-
-  const subjectContext = {
-    Physics:              'Apply physics examiner standards: check SI units, uncertainty treatment, physical reasoning, and whether variables are measurable and testable in a school lab.',
-    Chemistry:            'Apply chemistry examiner standards: check chemical nomenclature, reaction mechanisms, units (mol/L, nm, K), and whether the chemical system is specific and measurable.',
-    Biology:              'Apply biology examiner standards: check biological terminology, sample size considerations, statistical methods (SD, t-test, ANOVA), and ethical considerations for living organisms.',
-    ESS:                  'Apply ESS examiner standards: check systems thinking, use of environmental data, multiple perspectives (ecological, economic, social), and local/global scale considerations.',
-    'Language A':         'Apply Language A examiner standards: check close textual evidence, literary terminology precision, strength of interpretive argument, and whether critical sources are evaluated rather than just cited.',
-    'Language B':         'Apply Language B examiner standards: check sociolinguistic framework application, precision of linguistic terminology, quality of data analysis, and whether cultural context is integrated.',
-    History:              'Apply History examiner standards: check source evaluation (origin, purpose, value, limitation), historiographical awareness, use of primary evidence, and whether the argument is evaluative not descriptive.',
-    Economics:            'Apply Economics examiner standards: check correct use of economic models and diagrams, data analysis quality, evaluation of assumptions and limitations, and real-world application.',
-    Geography:            'Apply Geography examiner standards: check spatial analysis quality, data presentation (maps, graphs), fieldwork methodology, and systems thinking at appropriate scale.',
-    Mathematics:          'Apply Mathematics EE examiner standards: check mathematical rigour and correctness, clarity of logical development, appropriate use of notation, and whether personal engagement is evident.',
-    Arts:                 'Apply Arts examiner standards: check analytical depth of formal/technical elements, strength of interpretive argument, appropriate critical framework application, and specificity of textual/visual evidence.',
-    Psychology:           'Apply Psychology examiner standards: check research methodology rigour, ethical compliance, correct psychological terminology, statistical analysis quality, and whether conclusions are justified by evidence.',
-    Philosophy:           'Apply Philosophy examiner standards: check conceptual precision, strength of argument structure, quality of counter-argument engagement, and whether distinctions are drawn clearly.',
-    'Computer Science':   'Apply Computer Science examiner standards: check algorithm correctness, technical depth, quality of comparative analysis, appropriate use of complexity notation, and reproducibility of results.',
-    'Business Management':'Apply Business Management examiner standards: check correct application of business tools and frameworks, quality of primary and secondary data, balanced stakeholder analysis, and whether conclusions are evidence-based.',
-    'Global Politics':    'Apply Global Politics examiner standards: check correct use of political concepts, quality of case study evidence, engagement with multiple perspectives, and whether the argument is evaluative rather than descriptive.',
-  }[subject] || 'Apply IB EE examiner standards appropriate to this subject: check conceptual precision, quality of evidence and analysis, coherence of argument, and whether the conclusion directly answers the research question.';
-
-  const stageCriteria = {
-
-    // ── STAGE 1: Topic Selection & Research Question (Criterion A) ────────────
-    'Topic Selection & Research Question': `
-You are an experienced IB Extended Essay examiner evaluating a student's Stage 1: Topic Selection & Research Question.
-This is assessed under Criterion A (Framework, 6 marks).
-Subject: ${subject}. ${subjectContext}
-
-CRITERION A STANDARDS:
-- The RQ must be clear, focused, and appropriately complex for an EE (not trivial or impossibly broad).
-- The RQ must yield data or evidence that can be directly analysed to answer it (Criterion A requires this explicitly).
-- Structural conventions for sciences: the RQ should specify the independent variable, dependent variable, and context.
-- The hypothesis/working argument must follow logically from the RQ and be grounded in subject theory.
-- The justification for primary vs secondary data must be appropriate for the subject and accessible at IB level.
-
-RESPONSE FORMAT (STRICT):
-### Overall Judgment
-(Strong / Adequate / Weak — and why in 1–2 sentences)
-
-### RQ Quality Check
-(Is the RQ specific, measurable, and appropriate for an EE? Any issues with scope?)
-
-### Coherence & Rigour
-(Does the hypothesis follow logically from the RQ? Are the variables clearly defined and consistent?)
-
-### Specific Feedback
-(Bullet points: strengths and weaknesses)
-
-### Priority Fixes
-(Top 3 specific, actionable corrections for this stage)`,
-
-    // ── STAGE 2: Research & Literature Review (Criteria A + B) ───────────────
-    'Research & Literature Review': `
-You are an experienced IB Extended Essay examiner evaluating a student's Stage 2: Research & Literature Review.
-This is assessed under Criteria A (Framework) and B (Knowledge & Understanding, 6 marks).
-Subject: ${subject}. ${subjectContext}
-${anchor}
-CRITERION B STANDARDS:
-- Subject-specific terminology must be used precisely and defined correctly.
-- The theoretical framework must directly explain the relationship between the IV and DV in the RQ.
-- Sources should be evaluated for reliability and relevance — not just listed.
-- There must be clear evidence the student understands the underlying science/theory, not just copied it.
-- The anchor check: does the literature support, challenge, or complicate the Stage 1 hypothesis?
-
-RESPONSE FORMAT (STRICT):
-### Anchor Check
-(State: "Consistent with locked RQ." OR "Inconsistent — [specific issue]")
-
-### Overall Judgment
-(Strong / Adequate / Weak)
-
-### Knowledge & Understanding (Criterion B)
-(Is the theory accurate, precise, and directly relevant to the RQ? Any misconceptions or scope drift?)
-
-### Source Evaluation
-(Are sources appropriate, peer-reviewed where needed, and correctly evaluated?)
-
-### Specific Feedback
-(Bullet points: strengths and weaknesses)
-
-### Priority Fixes
-(Top 3 actionable corrections)`,
-
-    // ── STAGE 3: Essay Outline (Criteria A + C) ───────────────────────────────
-    'Essay Outline': `
-You are an experienced IB Extended Essay examiner evaluating a student's Stage 3: Essay Outline.
-This is assessed under Criteria A (Framework) and C (Analysis, 6 marks).
-Subject: ${subject}. ${subjectContext}
-${anchor}
-CRITERION A + C STANDARDS FOR OUTLINE:
-- The structure must lead logically from the RQ to the conclusion — every section must serve the argument.
-- Data presentation plan must be appropriate for the subject (SI units, uncertainty values, labelled graphs for sciences; structured evidence for ESS).
-- The analytical method must match the type of data being collected and be capable of directly addressing the RQ.
-- Criterion C requires BOTH qualitative and quantitative analysis for science subjects.
-- The outline must show a clear line of argument — not just a list of topics.
-
-RESPONSE FORMAT (STRICT):
-### Anchor Check
-(Does the outline's structure directly address the locked RQ throughout? Any structural drift?)
-
-### Overall Judgment
-(Strong / Adequate / Weak)
-
-### Structural Logic (Criterion A)
-(Does every section connect to the RQ? Is there a clear line of argument from intro to conclusion?)
-
-### Analysis Plan (Criterion C)
-(Is the proposed analytical method appropriate? Does it address both qualitative and quantitative dimensions?)
-
-### Specific Feedback
-(Bullet points: strengths and weaknesses)
-
-### Priority Fixes
-(Top 3 actionable corrections)`,
-
-    // ── STAGE 4: Draft Review (Criteria B + C + D) ────────────────────────────
-    'Draft Review': `
-You are an experienced IB Extended Essay examiner evaluating a student's Stage 4: Draft Review.
-This is assessed under Criteria B (Knowledge, 6 marks), C (Analysis, 6 marks), and D (Discussion & Evaluation, 8 marks).
-Subject: ${subject}. ${subjectContext}
-${anchor}
-CRITERION B, C, D STANDARDS:
-- Criterion B: Terminology must be precise and subject-specific. Theory must be relevant to the RQ, not generic textbook material.
-- Criterion C: Analysis must be both qualitative AND quantitative. Data must be processed correctly with appropriate methods. There must be a clear, sustained line of argument linking evidence to the RQ.
-- Criterion D: The discussion must critically evaluate the methodology — not just describe it. Limitations must be specific and their effect on the conclusion must be explained. Improvements must directly address identified limitations.
-- The conclusion must DIRECTLY answer the locked RQ using evidence from the essay.
-
-RESPONSE FORMAT (STRICT):
-### Anchor Check
-(Does the draft conclusion directly answer the locked RQ? Does the argument connect back to the Stage 1 hypothesis?)
-
-### Overall Judgment
-(Strong / Adequate / Weak)
-
-### Criterion B — Knowledge & Understanding
-(Terminology accuracy. Theory relevance. Any misconceptions or scope drift?)
-
-### Criterion C — Analysis
-(Is the analysis both qualitative and quantitative? Is the line of argument sustained and clear?)
-
-### Criterion D — Discussion & Evaluation
-(Are limitations specific? Is the methodology critically evaluated? Are improvements realistic?)
-
-### Specific Feedback
-(Bullet points: strengths and weaknesses)
-
-### Priority Fixes
-(Top 3 highest-impact corrections before submission)`,
-
-    // ── STAGE 5: Reflection / RPF (Criterion E) ───────────────────────────────
-    'Reflection (RPF)': `
-You are an experienced IB Extended Essay examiner evaluating a student's Stage 5: Reflection (RPF).
-This is assessed under Criterion E (Reflection, 4 marks).
-Subject: ${subject}. ${subjectContext}
-${anchor}
-CRITERION E STANDARDS:
-- The RPF must show EVALUATIVE reflection, not just description of what the student did.
-- There must be evidence of genuine intellectual growth — the student should show how their thinking changed.
-- Reflections must be specific to this investigation — generic statements score 0.
-- The evaluative reflection must identify a meaningful limitation and explain how it affected the conclusion.
-- Growth reflection must connect the experience to broader intellectual development (not just "I learned to use a pipette").
-- Maximum 500 words. The examiner reads for quality of reflection, not quantity.
-
-RESPONSE FORMAT (STRICT):
-### Anchor Check
-(Do the reflections connect specifically to the locked RQ and investigation? Or are they generic?)
-
-### Overall Judgment
-(Strong / Adequate / Weak — and predicted Criterion E band: 0, 1–2, 3–4)
-
-### Evaluative Reflection Quality
-(Is the limitation specific and its effect on the conclusion explained? Is the proposed improvement realistic?)
-
-### Growth Reflection Quality
-(Is there genuine intellectual development described? Is it specific to this investigation?)
-
-### Specific Feedback
-(Bullet points: strengths and weaknesses)
-
-### Priority Fixes
-(Top 2–3 specific improvements to raise the Criterion E score)`
-  };
-
-  const criteria = stageCriteria[stage];
-  if (!criteria) {
-    return `You are an IB EE examiner. Subject: ${subject}. Stage: ${stage}.\n${anchor}\nStudent submission:\n${studentInput}\n\nGive structured feedback on strengths, weaknesses, and top 3 priority fixes.`;
-  }
-
-  return `${criteria}\n\nStudent submission for ${stage}:\n${studentInput}`;
+function getSubjectContext(subject) {
+  return {
+    Physics:
+      'Apply IB Physics EE examiner standards. Check: SI units, uncertainty treatment (systematic vs random, percentage uncertainty propagation), physical reasoning quality, whether graphs are linearised where appropriate, and whether the gradient/intercept is interpreted in physical terms. Diagrams (circuit, ray diagram, free body diagram) must be correctly drawn and labelled.',
+    Chemistry:
+      'Apply IB Chemistry EE examiner standards. Check: chemical nomenclature precision, reaction mechanism clarity, units (mol/L, nm, K, J/mol), uncertainty propagation, comparison to literature values, and whether the analytical technique chosen matches the chemical system.',
+    Biology:
+      'Apply IB Biology EE examiner standards. Check: biological terminology, sample size (n ≥ 5 per group minimum), statistical methods (SD, t-test, ANOVA as appropriate), ethical treatment of living organisms, and whether variables are operationally defined.',
+    ESS:
+      'Apply IB ESS EE examiner standards. Check: systems thinking framework, reliability and provenance of environmental data, multiple perspectives (ecological, economic, social, ethical), appropriate scale (local/regional/global), and whether human-environment interactions are explicitly addressed.',
+    'Language A':
+      'Apply IB Language A EE examiner standards. Check: close textual evidence (direct quotation with page reference), literary terminology precision (not vague description), strength of interpretive argument, whether critical sources are engaged with rather than just cited, and whether the analysis goes beyond surface-level description.',
+    'Language B':
+      'Apply IB Language B EE examiner standards. Check: sociolinguistic or literary framework application, precision of linguistic terminology, corpus representativeness, cultural context integration, and whether the argument is analytical (not descriptive).',
+    History:
+      'Apply IB History EE examiner standards. Check: primary source evaluation (origin, purpose, value, limitation — OPCVL), historiographical awareness (named historians, named interpretations), use of specific historical evidence (dates, names, events), and whether the argument is evaluative not narrative.',
+    Economics:
+      'Apply IB Economics EE examiner standards. Check: correct economic model and diagram application (axes, labels, shifts), data analysis quality (trends, anomalies, comparison to theory), evaluation of assumptions and limitations, real-world application specificity, and whether stakeholder impacts are discussed.',
+    Geography:
+      'Apply IB Geography EE examiner standards. Check: spatial analysis quality, data presentation (maps, graphs, tables with labels), fieldwork methodology rigour, systems thinking at appropriate scale, and whether human and physical geography are integrated where relevant.',
+    Mathematics:
+      'Apply IB Mathematics EE examiner standards. Check: mathematical rigour and correctness of proofs/derivations, clarity of logical development, appropriate use of mathematical notation, whether personal engagement is genuinely evident, and whether the topic goes meaningfully beyond the IB syllabus.',
+    Arts:
+      'Apply IB Arts EE examiner standards. Check: analytical depth of formal/technical elements (not plot summary or vague description), strength and specificity of interpretive argument, appropriate critical framework application, and quality of specific textual/visual/musical evidence.',
+    Psychology:
+      'Apply IB Psychology EE examiner standards. Check: research methodology rigour, ethical compliance (consent, anonymity, debriefing), correct psychological terminology, statistical analysis appropriateness, and whether conclusions are justified by the evidence presented.',
+    Philosophy:
+      'Apply IB Philosophy EE examiner standards. Check: conceptual precision (define terms carefully), logical structure of arguments (premises → conclusion), quality of counter-argument engagement, clarity of distinctions, and whether the student takes and defends a position rather than merely surveying views.',
+    'Computer Science':
+      'Apply IB Computer Science EE examiner standards. Check: algorithm correctness, technical depth beyond surface description, quality of comparative analysis, appropriate use of Big-O and complexity notation, reproducibility of results, and whether ethical/social dimensions are acknowledged where relevant.',
+    'Business Management':
+      'Apply IB Business Management EE examiner standards. Check: correct application of BM frameworks (SWOT, Porter, BCG, Ansoff, etc.), quality and verifiability of primary and secondary data, balanced multi-stakeholder analysis, and whether conclusions are evidence-based rather than opinion-based.',
+    'Global Politics':
+      'Apply IB Global Politics EE examiner standards. Check: correct use of political concepts (power, sovereignty, legitimacy, human rights, etc.), quality of case study evidence, engagement with multiple theoretical perspectives (realism, liberalism, constructivism, etc.), and whether the argument is evaluative rather than descriptive.',
+  }[subject] || 'Apply IB EE examiner standards: check conceptual precision, quality of evidence and analysis, coherence of argument, and whether the conclusion directly answers the research question.';
 }
 
-// ─── FULL DOCUMENT GENERATION PROMPT ────────────────────────────────────────
+// ─── PER-QUESTION FEEDBACK FORMAT ────────────────────────────────────────────
+// The key innovation: the frontend sends ALL question labels + student answers
+// for the current stage. We give feedback question-by-question, then a stage summary.
+
+function buildPerQuestionPrompt(subject, stage, studentInput, anchorData) {
+  const anchor = getAnchorBlock(anchorData);
+  const subjectCtx = getSubjectContext(subject);
+
+  const stageCriterion = {
+    'Topic Exploration & Brainstorm':  'Pre-assessment (feeds Criterion A: Framework)',
+    'Research Question & Framework':   'Criterion A: Framework for the essay (6 marks)',
+    'Literature Review & Knowledge':   'Criterion B: Knowledge and Understanding (6 marks)',
+    'Analysis, Argument & Outline':    'Criterion C: Analysis and line of argument (6 marks)',
+    'Discussion, Evaluation & Draft':  'Criterion D: Discussion and Evaluation (8 marks — highest weighted)',
+    'Reflection (RPF)':                'Criterion E: Reflection (4 marks)',
+  }[stage] || 'IB EE Assessment';
+
+  const stageGuidance = {
+
+    'Topic Exploration & Brainstorm': `
+WHAT TO ASSESS IN THIS STAGE:
+- Is the student's curiosity genuine and specific — or vague and generic?
+- Is the topic sufficiently narrow for 4,000 words, and sufficiently rich for deep analysis?
+- Does the topic connect authentically to the named subject, not just superficially?
+- Is there a clear angle (compare, evaluate, challenge, analyse) emerging?
+- Is the draft RQ seed specific enough to be refined into a strong RQ in Stage 2?
+- For sciences: check whether the topic is experimentally/analytically feasible at school level.
+- For humanities: check whether sufficient primary and secondary sources are likely to exist.
+WATCH FOR: Topics that are too broad ("I want to study climate change"), too narrow (only one data point possible), or not genuinely about the subject claimed.`,
+
+    'Research Question & Framework': `
+WHAT TO ASSESS IN THIS STAGE:
+- Is the finalised RQ clear, focused, and specific? Does it use "how", "why", or "to what extent"?
+- Is the RQ arguable — can a reasonable person reach a different conclusion from the same evidence?
+- For sciences: does the RQ name the IV and DV explicitly with appropriate context?
+- For humanities: does the RQ invite evaluative analysis, not narrative description?
+- Is the research method or approach appropriate for the subject and RQ?
+- Is the essay structure logical — does it lead from RQ through evidence to conclusion?
+- Is the word allocation realistic and appropriately distributed?
+WATCH FOR: RQs that are too descriptive ("What is X?"), too broad ("How does globalisation affect society?"), or that cannot be answered within 4,000 words with available sources.
+DIAGRAMS/GRAPHS NOTE: For sciences and economics, assess whether the student has planned for graphs, data tables, and diagrams in their structure. If not, flag this as a gap.`,
+
+    'Literature Review & Knowledge': `
+WHAT TO ASSESS IN THIS STAGE:
+- Is the theoretical background accurate, precise, and directly relevant to the RQ?
+- Are subject-specific concepts defined correctly using proper terminology?
+- Are sources evaluated for reliability (not just listed)?
+- Is there genuine engagement with the scholarly debate — do they engage with what scholars argue, not just what they found?
+- For sciences: are equations correct, with all variables defined and conditions of applicability stated?
+- For sciences: are uncertainties and limitations of the theoretical models acknowledged?
+- For history: are primary sources evaluated using OPCVL or equivalent?
+- For economics: are economic models applied correctly with diagrams planned?
+WATCH FOR: Copied-and-pasted theory without understanding, failure to define terms, sources cited but not evaluated, and theoretical frameworks that are generic rather than specifically relevant to the RQ.
+CRITICAL THINKING PROBE: Ask whether the student has identified where their theoretical model breaks down or has known limitations. Absence of this is a significant weakness.`,
+
+    'Analysis, Argument & Outline': `
+WHAT TO ASSESS IN THIS STAGE:
+- Is there a clear, arguable thesis statement that directly answers the RQ?
+- Does each body section make a distinct, logically connected claim?
+- Is the line of argument coherent — does it move from RQ through evidence to conclusion?
+- Is the counterargument engaged with seriously and rebutted with evidence?
+- For sciences: is the data presented correctly with units, uncertainties, and uncertainty analysis? Are graphs described analytically (what does the gradient mean? what does the shape reveal?)?
+- For sciences: is uncertainty propagation carried out? Are systematic and random errors distinguished?
+- For humanities: are claims supported by specific textual or historical evidence (not paraphrase)?
+- Is the conclusion draft a synthesis, not a summary?
+WATCH FOR: Essays that list evidence without argument, conclusions that merely summarise instead of synthesise, counterarguments dismissed too quickly, and science work where graphs/data/uncertainties are absent or described without analytical interpretation.
+DIAGRAMS/GRAPHS — MANDATORY CHECK FOR SCIENCES AND ECONOMICS:
+If the student is studying Physics, Chemistry, Biology, ESS, or Economics, check explicitly:
+(a) Have they described their data table structure with units and uncertainty columns?
+(b) Have they described their graph axes, trend shape, and what the gradient or intercept represents?
+(c) Have they calculated percentage uncertainties and identified the dominant source of error?
+If any of these are missing, flag them as Priority Fixes — they directly determine Criterion C marks.`,
+
+    'Discussion, Evaluation & Draft': `
+WHAT TO ASSESS IN THIS STAGE:
+- Does the conclusion directly and specifically answer the locked RQ? (Criterion D is worth 8 marks — the highest weight.)
+- Does the discussion evaluate the significance of the findings, not just state them?
+- Are limitations of the investigation specific and honest — with the effect of each limitation on the conclusion explained?
+- Are improvements realistic and directly linked to identified limitations (not generic)?
+- Is the essay balanced — does it give fair weight to evidence that complicates or challenges the thesis?
+- Is the introduction complete — does it contextualise the topic, state the RQ, explain the method, outline the structure?
+- For sciences: are systematic and random errors distinguished? Are improvements specific to the experimental setup?
+- For economics: are stakeholder impacts evaluated? Is theory vs reality divergence explained?
+- For history: does the conclusion synthesise the historiographical debate?
+- For language: does the conclusion synthesise the interpretive argument rather than restating the introduction?
+WATCH FOR: Conclusions that summarise instead of synthesise, limitations stated without explaining their effect, improvements that are vague ("use better equipment"), and discussions that are one-sided without engaging with counterevidence.`,
+
+    'Reflection (RPF)': `
+WHAT TO ASSESS IN THIS STAGE:
+- Is the reflection EVALUATIVE (what changed, why it mattered) or merely DESCRIPTIVE (what I did)?
+- Is the reflection specific to THIS investigation — or could it have been written about any EE?
+- Are key decision points named with specific details (what changed, why, what the effect was)?
+- Is there genuine intellectual growth described — something the student can now do or think that they could not before?
+- Is the RPF draft within 500 words and focused on quality of reflection, not quantity?
+- Do the reflections connect specifically to the locked RQ and the research process?
+WATCH FOR: Generic reflections ("I learned time management"), descriptions of what was done rather than what was learned, reflections that do not connect to the specific investigation, and RPF statements that are too long with insufficient depth.
+CRITERION E BANDS: 0 = no reflection / trivial; 1-2 = some reflection but largely descriptive; 3-4 = genuine evaluative reflection with specific intellectual growth. Predict the band and explain why.`,
+
+  }[stage] || 'Apply IB EE examiner standards to each answer below.';
+
+  return `You are an experienced IB Extended Essay examiner giving per-question feedback.
+
+Subject: ${subject}
+Stage: ${stage}
+Criterion: ${stageCriterion}
+
+${subjectCtx}
+${anchor}
+${stageGuidance}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STUDENT'S ANSWERS FOR THIS STAGE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${studentInput}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR RESPONSE FORMAT (STRICT — follow exactly):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Anchor Check
+State explicitly: "Consistent with locked RQ." OR "INCONSISTENT — [specific mismatch]."
+
+### Per-Question Feedback
+
+For EACH numbered question the student has answered, provide:
+
+**Q[N] — [question topic in 3-5 words]**
+- Depth: (Excellent / Adequate / Superficial / Missing)
+- Feedback: [2-4 sentences — specific critique, not generic. Name what is good and what is weak. For sciences: flag missing units, uncertainties, or graph descriptions. For humanities: flag missing evidence, vague claims, or absent critical engagement.]
+- Fix: [One specific, actionable sentence: what exactly should the student add or change?]
+
+(Repeat for every answered question. Skip unanswered questions — just note "Not yet answered.")
+
+### Stage Overview
+(Strong / Adequate / Weak — 2 sentences on the overall quality of this stage's work.)
+
+### Top 3 Priority Fixes
+(The three highest-impact corrections to raise the IB mark for this stage. Be specific — name the question number and the exact change needed.)
+
+1.
+2.
+3.`;
+}
+
+// ─── FULL DOCUMENT REVIEW PROMPT ─────────────────────────────────────────────
 
 function getFullDocumentPrompt(subject, allStageData, anchorData) {
-  const rq  = (anchorData.rq  || 'Not defined').trim();
-  const hyp = (anchorData.hypothesis || '').trim();
+  const rq  = (anchorData?.rq  || 'Not defined').trim();
+  const hyp = (anchorData?.hypothesis || '').trim();
+  const subjectCtx = getSubjectContext(subject);
 
-  const subjectContext = {
-    Physics:              'Apply IB Physics EE examiner standards: check SI units throughout, uncertainty treatment, quality of physical reasoning, linearisation of data.',
-    Chemistry:            'Apply IB Chemistry EE examiner standards: check chemical nomenclature, reaction mechanisms, uncertainty propagation, comparison to literature values.',
-    Biology:              'Apply IB Biology EE examiner standards: check biological terminology, statistical analysis (t-test/ANOVA/SD), sample size, ethical considerations.',
-    ESS:                  'Apply IB ESS EE examiner standards: check systems thinking, environmental data quality, multiple perspectives, local/global scale analysis.',
-    'Language A':         'Apply IB Language A EE examiner standards: check close textual analysis, literary argument quality, critical source integration, and evaluative depth.',
-    'Language B':         'Apply IB Language B EE examiner standards: check linguistic framework rigour, data analysis quality, cultural context integration, and argument coherence.',
-    History:              'Apply IB History EE examiner standards: check source evaluation quality, historiographical awareness, primary evidence use, and evaluative argument structure.',
-    Economics:            'Apply IB Economics EE examiner standards: check economic model application, data analysis quality, evaluation of assumptions, and real-world application.',
-    Geography:            'Apply IB Geography EE examiner standards: check spatial analysis, fieldwork methodology, data presentation, and systems thinking.',
-    Mathematics:          'Apply IB Mathematics EE examiner standards: check mathematical rigour, logical development, correct notation, and personal engagement.',
-    Arts:                 'Apply IB Arts EE examiner standards: check analytical depth, interpretive argument strength, critical framework application, and textual/visual specificity.',
-    Psychology:           'Apply IB Psychology EE examiner standards: check research methodology, ethical compliance, terminology precision, and statistical analysis.',
-    Philosophy:           'Apply IB Philosophy EE examiner standards: check conceptual precision, argument structure, counter-argument engagement, and clarity of distinctions.',
-    'Computer Science':   'Apply IB Computer Science EE examiner standards: check algorithm correctness, technical depth, comparative analysis, complexity notation, and reproducibility.',
-    'Business Management':'Apply IB Business Management EE examiner standards: check framework application, data quality, stakeholder analysis, and evidence-based conclusions.',
-    'Global Politics':    'Apply IB Global Politics EE examiner standards: check political concept use, case study evidence, multiple perspectives, and evaluative argument.',
-  }[subject] || 'Apply IB EE examiner standards: check conceptual precision, evidence quality, argument coherence, and whether the conclusion directly answers the research question.';
-
-  let stagesText = '';
   const stageOrder = [
-    'Topic Selection & Research Question',
-    'Research & Literature Review',
-    'Essay Outline',
-    'Draft Review',
+    'Topic Exploration & Brainstorm',
+    'Research Question & Framework',
+    'Literature Review & Knowledge',
+    'Analysis, Argument & Outline',
+    'Discussion, Evaluation & Draft',
     'Reflection (RPF)'
   ];
+
+  let stagesText = '';
   stageOrder.forEach((stage, i) => {
     const data = allStageData[stage];
     if (data && Object.values(data).some(v => v && String(v).trim())) {
@@ -298,55 +274,60 @@ function getFullDocumentPrompt(subject, allStageData, anchorData) {
   return `You are an experienced IB Extended Essay examiner producing a comprehensive review document.
 
 Subject: ${subject}
-${subjectContext}
+${subjectCtx}
 
-LOCKED RESEARCH QUESTION (from Stage 1): ${rq}
-${hyp ? `LOCKED HYPOTHESIS/ARGUMENT (from Stage 1): ${hyp}` : ''}
+LOCKED RESEARCH QUESTION (from Stage 2): ${rq}
+${hyp ? `LOCKED HYPOTHESIS/ARGUMENT: ${hyp}` : ''}
 
-STUDENT'S EE WORK ACROSS ALL 5 STAGES:
+STUDENT'S EE WORK ACROSS ALL 6 STAGES:
 ${stagesText}
 
-Write a full examiner review document with the following structure:
+Produce a full examiner review document:
 
 ## IB EE Examiner Review — ${subject}
 
 ### Research Question Consistency Check
-(Has the student maintained focus on the locked RQ throughout all 5 stages? Name any specific section where drift or contradiction occurred.)
+(Has the student maintained focus on the locked RQ throughout all stages? Name any specific stage where drift, contradiction, or scope creep occurred.)
 
 ---
 
-### Criterion A: Framework (out of 6)
+### Criterion A: Framework for the essay (out of 6)
 Estimated mark band: [X–Y / 6]
 Strengths: (with reference to specific student work)
 Areas for improvement: (specific, actionable)
 
-### Criterion B: Knowledge & Understanding (out of 6)
+### Criterion B: Knowledge and Understanding (out of 6)
 Estimated mark band: [X–Y / 6]
 Strengths:
 Areas for improvement:
+Terminology check: (Flag any subject-specific terms used incorrectly or imprecisely.)
 
-### Criterion C: Analysis (out of 6)
+### Criterion C: Analysis and Line of Argument (out of 6)
 Estimated mark band: [X–Y / 6]
 Strengths:
 Areas for improvement:
+${['Physics','Chemistry','Biology','ESS','Economics'].includes(subject) ? 'Diagrams/Data/Graphs check: (Are data tables, graphs with labelled axes and units, uncertainty analysis, and gradient/intercept interpretation present? Flag any missing elements — these directly determine Criterion C marks.)' : 'Evidence quality: (Is evidence specific, well-chosen, and analytically integrated — not just cited?)'}
 
-### Criterion D: Discussion & Evaluation (out of 8)
+### Criterion D: Discussion and Evaluation (out of 8) — HIGHEST WEIGHT
 Estimated mark band: [X–Y / 8]
 Strengths:
 Areas for improvement:
+Limitations check: (Are limitations specific and is their effect on the conclusion explained? Generic limitations score 0 here.)
 
 ### Criterion E: Reflection (out of 4)
 Estimated mark band: [X–Y / 4]
 Strengths:
 Areas for improvement:
+RPF band prediction: (0 / 1–2 / 3–4 — with specific reason)
 
 ---
 
-### Overall Estimated Mark: [XX / 30]
+### Overall Estimated Mark: [XX / 34]
 (Predicted grade: [A / B / C / D / E])
+Note: Criterion D is worth 8 marks. Criterion E is worth 4. Total = 34 marks.
 
 ### Top 5 Priority Improvements Before Submission
-(Ranked by impact on final mark)
+(Ranked by impact on final mark — most impactful first)
 1.
 2.
 3.
@@ -354,37 +335,41 @@ Areas for improvement:
 5.
 
 ---
-*This review is based on the IBHighway EE Diary entries. It is an AI-assisted examiner estimate — always verify against the official IB EE guide and consult your supervisor.*`;
+*This review is AI-assisted and based on IBHighway EE Diary entries. Always verify against the official IB EE Guide 2025 and consult your supervisor before submission.*`;
 }
 
 // ─── FASTIFY ROUTE REGISTRATION ──────────────────────────────────────────────
 
 module.exports = async function eeDiaryRoutes(app) {
 
-  // POST /api/ee-review — per-section feedback
+  // POST /api/ee-review — per-stage, per-question feedback
   app.post('/ee-review', async (req, reply) => {
     const { subject, stage, studentInput, anchorData, geminiKey } = req.body || {};
-    if (!geminiKey)                    return reply.code(400).send({ error: 'No Gemini key provided' });
-    if (!subject || !stage || !studentInput) return reply.code(400).send({ error: 'Missing fields: subject, stage, studentInput required' });
+    if (!geminiKey)
+      return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !stage || !studentInput)
+      return reply.code(400).send({ error: 'Missing fields: subject, stage, studentInput required' });
 
     try {
-      const prompt = getSectionPrompt(subject, stage, studentInput, anchorData || {});
-      const result = await callGemini(geminiKey, prompt, 1200);
+      const prompt = buildPerQuestionPrompt(subject, stage, studentInput, anchorData || {});
+      const result = await callGemini(geminiKey, prompt, 2000);
       return reply.send(result);
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }
   });
 
-  // POST /api/ee-generate — full document review (all 5 stages)
+  // POST /api/ee-generate — full 6-stage review document
   app.post('/ee-generate', async (req, reply) => {
     const { subject, allStageData, anchorData, geminiKey } = req.body || {};
-    if (!geminiKey)  return reply.code(400).send({ error: 'No Gemini key provided' });
-    if (!subject)    return reply.code(400).send({ error: 'Missing subject' });
+    if (!geminiKey)
+      return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject)
+      return reply.code(400).send({ error: 'Missing subject' });
 
     try {
       const prompt = getFullDocumentPrompt(subject, allStageData || {}, anchorData || {});
-      const result = await callGemini(geminiKey, prompt, 2500);
+      const result = await callGemini(geminiKey, prompt, 3000);
       return reply.send(result);
     } catch (e) {
       return reply.code(500).send({ error: e.message });

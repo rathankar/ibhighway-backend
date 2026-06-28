@@ -63,11 +63,23 @@ function getSectionPrompt(subject, stage, studentInput, anchorData) {
   const anchor = getAnchorBlock(anchorData);
 
   const subjectContext = {
-    Physics:   'Apply physics examiner standards: check SI units, uncertainty treatment, physical reasoning, and whether variables are measurable and testable in a school lab.',
-    Chemistry: 'Apply chemistry examiner standards: check chemical nomenclature, reaction mechanisms, units (mol/L, nm, K), and whether the chemical system is specific and measurable.',
-    Biology:   'Apply biology examiner standards: check biological terminology, sample size considerations, statistical methods (SD, t-test, ANOVA), and ethical considerations for living organisms.',
-    ESS:       'Apply ESS examiner standards: check systems thinking, use of environmental data, multiple perspectives (ecological, economic, social), and local/global scale considerations.'
-  }[subject] || '';
+    Physics:              'Apply physics examiner standards: check SI units, uncertainty treatment, physical reasoning, and whether variables are measurable and testable in a school lab.',
+    Chemistry:            'Apply chemistry examiner standards: check chemical nomenclature, reaction mechanisms, units (mol/L, nm, K), and whether the chemical system is specific and measurable.',
+    Biology:              'Apply biology examiner standards: check biological terminology, sample size considerations, statistical methods (SD, t-test, ANOVA), and ethical considerations for living organisms.',
+    ESS:                  'Apply ESS examiner standards: check systems thinking, use of environmental data, multiple perspectives (ecological, economic, social), and local/global scale considerations.',
+    'Language A':         'Apply Language A examiner standards: check close textual evidence, literary terminology precision, strength of interpretive argument, and whether critical sources are evaluated rather than just cited.',
+    'Language B':         'Apply Language B examiner standards: check sociolinguistic framework application, precision of linguistic terminology, quality of data analysis, and whether cultural context is integrated.',
+    History:              'Apply History examiner standards: check source evaluation (origin, purpose, value, limitation), historiographical awareness, use of primary evidence, and whether the argument is evaluative not descriptive.',
+    Economics:            'Apply Economics examiner standards: check correct use of economic models and diagrams, data analysis quality, evaluation of assumptions and limitations, and real-world application.',
+    Geography:            'Apply Geography examiner standards: check spatial analysis quality, data presentation (maps, graphs), fieldwork methodology, and systems thinking at appropriate scale.',
+    Mathematics:          'Apply Mathematics EE examiner standards: check mathematical rigour and correctness, clarity of logical development, appropriate use of notation, and whether personal engagement is evident.',
+    Arts:                 'Apply Arts examiner standards: check analytical depth of formal/technical elements, strength of interpretive argument, appropriate critical framework application, and specificity of textual/visual evidence.',
+    Psychology:           'Apply Psychology examiner standards: check research methodology rigour, ethical compliance, correct psychological terminology, statistical analysis quality, and whether conclusions are justified by evidence.',
+    Philosophy:           'Apply Philosophy examiner standards: check conceptual precision, strength of argument structure, quality of counter-argument engagement, and whether distinctions are drawn clearly.',
+    'Computer Science':   'Apply Computer Science examiner standards: check algorithm correctness, technical depth, quality of comparative analysis, appropriate use of complexity notation, and reproducibility of results.',
+    'Business Management':'Apply Business Management examiner standards: check correct application of business tools and frameworks, quality of primary and secondary data, balanced stakeholder analysis, and whether conclusions are evidence-based.',
+    'Global Politics':    'Apply Global Politics examiner standards: check correct use of political concepts, quality of case study evidence, engagement with multiple perspectives, and whether the argument is evaluative rather than descriptive.',
+  }[subject] || 'Apply IB EE examiner standards appropriate to this subject: check conceptual precision, quality of evidence and analysis, coherence of argument, and whether the conclusion directly answers the research question.';
 
   const stageCriteria = {
 
@@ -247,11 +259,23 @@ function getFullDocumentPrompt(subject, allStageData, anchorData) {
   const hyp = (anchorData.hypothesis || '').trim();
 
   const subjectContext = {
-    Physics:   'Apply IB Physics EE examiner standards: check SI units throughout, uncertainty treatment, quality of physical reasoning, linearisation of data.',
-    Chemistry: 'Apply IB Chemistry EE examiner standards: check chemical nomenclature, reaction mechanisms, uncertainty propagation, comparison to literature values.',
-    Biology:   'Apply IB Biology EE examiner standards: check biological terminology, statistical analysis (t-test/ANOVA/SD), sample size, ethical considerations.',
-    ESS:       'Apply IB ESS EE examiner standards: check systems thinking, environmental data quality, multiple perspectives, local/global scale analysis.'
-  }[subject] || '';
+    Physics:              'Apply IB Physics EE examiner standards: check SI units throughout, uncertainty treatment, quality of physical reasoning, linearisation of data.',
+    Chemistry:            'Apply IB Chemistry EE examiner standards: check chemical nomenclature, reaction mechanisms, uncertainty propagation, comparison to literature values.',
+    Biology:              'Apply IB Biology EE examiner standards: check biological terminology, statistical analysis (t-test/ANOVA/SD), sample size, ethical considerations.',
+    ESS:                  'Apply IB ESS EE examiner standards: check systems thinking, environmental data quality, multiple perspectives, local/global scale analysis.',
+    'Language A':         'Apply IB Language A EE examiner standards: check close textual analysis, literary argument quality, critical source integration, and evaluative depth.',
+    'Language B':         'Apply IB Language B EE examiner standards: check linguistic framework rigour, data analysis quality, cultural context integration, and argument coherence.',
+    History:              'Apply IB History EE examiner standards: check source evaluation quality, historiographical awareness, primary evidence use, and evaluative argument structure.',
+    Economics:            'Apply IB Economics EE examiner standards: check economic model application, data analysis quality, evaluation of assumptions, and real-world application.',
+    Geography:            'Apply IB Geography EE examiner standards: check spatial analysis, fieldwork methodology, data presentation, and systems thinking.',
+    Mathematics:          'Apply IB Mathematics EE examiner standards: check mathematical rigour, logical development, correct notation, and personal engagement.',
+    Arts:                 'Apply IB Arts EE examiner standards: check analytical depth, interpretive argument strength, critical framework application, and textual/visual specificity.',
+    Psychology:           'Apply IB Psychology EE examiner standards: check research methodology, ethical compliance, terminology precision, and statistical analysis.',
+    Philosophy:           'Apply IB Philosophy EE examiner standards: check conceptual precision, argument structure, counter-argument engagement, and clarity of distinctions.',
+    'Computer Science':   'Apply IB Computer Science EE examiner standards: check algorithm correctness, technical depth, comparative analysis, complexity notation, and reproducibility.',
+    'Business Management':'Apply IB Business Management EE examiner standards: check framework application, data quality, stakeholder analysis, and evidence-based conclusions.',
+    'Global Politics':    'Apply IB Global Politics EE examiner standards: check political concept use, case study evidence, multiple perspectives, and evaluative argument.',
+  }[subject] || 'Apply IB EE examiner standards: check conceptual precision, evidence quality, argument coherence, and whether the conclusion directly answers the research question.';
 
   let stagesText = '';
   const stageOrder = [

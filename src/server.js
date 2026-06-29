@@ -94,6 +94,7 @@ app.register(require('./routes/ia-autopsy'),    { prefix: '/api/ia-autopsy' });
 app.register(require('./routes/ia-diary'),      { prefix: '/api' });
 app.register(require('./routes/ee-diary'),      { prefix: '/api' });
 app.register(require('./routes/tok-diary'),     { prefix: '/api' });
+app.register(require('./routes/research-to-lab'), { prefix: '/api' });
 app.register(require('./routes/ee-compass'),    { prefix: '/api/ee-compass' });
 app.register(require('./routes/fbd-log'),       { prefix: '/api/fbd-log' });
 app.register(require('./routes/tool-log'),      { prefix: '/api/tool-log' });
@@ -138,25 +139,4 @@ app.listen({ port: PORT, host: HOST }, (err) => {
 
   const telegram = require('./telegram');
   telegram.getBot();
-  if (IS_PROD && process.env.APP_BASE_URL) {
-    telegram.setWebhook(process.env.APP_BASE_URL);
-  }
-
-  const { startDeadlineCron } = require('./deadline-cron');
-  startDeadlineCron();
-});
-
-async function shutdown(signal) {
-  app.log.info({ signal }, 'shutting down');
-  try {
-    await app.close();
-    await pool.end();
-    process.exit(0);
-  } catch (err) {
-    app.log.error({ err }, 'error during shutdown');
-    process.exit(1);
-  }
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+  if (IS_PROD

@@ -139,4 +139,25 @@ app.listen({ port: PORT, host: HOST }, (err) => {
 
   const telegram = require('./telegram');
   telegram.getBot();
-  if (IS_PROD
+  if (IS_PROD && process.env.APP_BASE_URL) {
+    telegram.setWebhook(process.env.APP_BASE_URL);
+  }
+
+  const { startDeadlineCron } = require('./deadline-cron');
+  startDeadlineCron();
+});
+
+async function shutdown(signal) {
+  app.log.info({ signal }, 'shutting down');
+  try {
+    await app.close();
+    await pool.end();
+    process.exit(0);
+  } catch (err) {
+    app.log.error({ err }, 'error during shutdown');
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

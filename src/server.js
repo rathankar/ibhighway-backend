@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const Fastify = require('fastify');
 const pool = require('./db');
 
@@ -72,34 +72,34 @@ app.decorate('authenticate', async (request, reply) => {
   }
 });
 
-// â”€â”€ Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-app.register(require('./routes/auth'),          { prefix: '/api/auth' });
-app.register(require('./routes/teachers'),      { prefix: '/api/teachers' });
-app.register(require('./routes/bookings'),      { prefix: '/api/bookings' });
-app.register(require('./routes/payments'),      { prefix: '/api/payments' });
-app.register(require('./routes/leads'),         { prefix: '/api/leads' });
-app.register(require('./routes/admin'),         { prefix: '/api/admin' });
-app.register(require('./routes/teacher-apply'), { prefix: '/api/teacher-apply' });
-app.register(require('./routes/directory'),     { prefix: '/api/directory' });
-app.register(require('./routes/subscriptions'), { prefix: '/api/subscriptions' });
-app.register(require('./routes/messages'),      { prefix: '/api/messages' });
-app.register(require('./routes/sessions'),      { prefix: '/api/sessions' });
-app.register(require('./routes/telegram'),      { prefix: '/api/telegram' });
-app.register(require('./routes/credits'),       { prefix: '/api/credits' });
-app.register(require('./routes/coins'),         { prefix: '/api/coins' });
-app.register(require('./routes/guidance-bookings'), { prefix: '/api/guidance-bookings' });
-app.register(require('./routes/mentor'),        { prefix: '/api/mentor' });
-app.register(require('./routes/deadlines'),     { prefix: '/api/deadlines' });
-app.register(require('./routes/ia-autopsy'),    { prefix: '/api/ia-autopsy' });
-app.register(require('./routes/ia-diary'),      { prefix: '/api' });
-app.register(require('./routes/ee-diary'),      { prefix: '/api' });
-app.register(require('./routes/tok-diary'),     { prefix: '/api' });
-app.register(require('./routes/research-to-lab'), { prefix: '/api' });
-app.register(require('./routes/ee-compass'),    { prefix: '/api/ee-compass' });
-app.register(require('./routes/fbd-log'),       { prefix: '/api/fbd-log' });
-app.register(require('./routes/tool-log'),      { prefix: '/api/tool-log' });
-app.register(require('./routes/teacher-terms'), { prefix: '/api/teacher-terms' });
-app.register(require('./routes/tools-auth'),   { prefix: '/api' });  // IBHighway standalone tools: /api/auth/verify, /api/analytics/*, /api/admin/*
+// Routes
+app.register(require('./routes/auth'),             { prefix: '/api/auth' });
+app.register(require('./routes/teachers'),         { prefix: '/api/teachers' });
+app.register(require('./routes/bookings'),         { prefix: '/api/bookings' });
+app.register(require('./routes/payments'),         { prefix: '/api/payments' });
+app.register(require('./routes/leads'),            { prefix: '/api/leads' });
+app.register(require('./routes/admin'),            { prefix: '/api/admin' });
+app.register(require('./routes/teacher-apply'),    { prefix: '/api/teacher-apply' });
+app.register(require('./routes/directory'),        { prefix: '/api/directory' });
+app.register(require('./routes/subscriptions'),    { prefix: '/api/subscriptions' });
+app.register(require('./routes/messages'),         { prefix: '/api/messages' });
+app.register(require('./routes/sessions'),         { prefix: '/api/sessions' });
+app.register(require('./routes/telegram'),         { prefix: '/api/telegram' });
+app.register(require('./routes/credits'),          { prefix: '/api/credits' });
+app.register(require('./routes/coins'),            { prefix: '/api/coins' });
+app.register(require('./routes/guidance-bookings'),{ prefix: '/api/guidance-bookings' });
+app.register(require('./routes/deadlines'),        { prefix: '/api/deadlines' });
+app.register(require('./routes/ia-autopsy'),       { prefix: '/api/ia-autopsy' });
+app.register(require('./routes/ia-diary'),         { prefix: '/api' });
+app.register(require('./routes/ee-diary'),         { prefix: '/api' });
+app.register(require('./routes/tok-diary'),        { prefix: '/api' });
+app.register(require('./routes/research-to-lab'),  { prefix: '/api' });
+app.register(require('./routes/mentor'),           { prefix: '/api' });
+app.register(require('./routes/ee-compass'),       { prefix: '/api/ee-compass' });
+app.register(require('./routes/fbd-log'),          { prefix: '/api/fbd-log' });
+app.register(require('./routes/tool-log'),         { prefix: '/api/tool-log' });
+app.register(require('./routes/teacher-terms'),    { prefix: '/api/teacher-terms' });
+app.register(require('./routes/tools-auth'),       { prefix: '/api' });
 
 app.get('/api/health', async () => ({
   status: 'ok',
@@ -107,13 +107,10 @@ app.get('/api/health', async () => ({
   time: new Date(),
 }));
 
-// â”€â”€ TEST ROUTE â€” fire deadline reminders manually â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Visit: https://ibhighway-production.up.railway.app/api/test-deadline-cron
-// Remove this route after testing is confirmed working.
 app.get('/api/test-deadline-cron', async (req, reply) => {
   const { sendDeadlineReminders } = require('./deadline-cron');
   await sendDeadlineReminders();
-  return { ok: true, message: 'Cron ran â€” check Railway logs and your inbox' };
+  return { ok: true, message: 'Cron ran - check Railway logs and your inbox' };
 });
 
 app.get('/api/routes', async () => {

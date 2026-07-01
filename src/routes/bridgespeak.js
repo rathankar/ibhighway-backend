@@ -128,10 +128,17 @@ module.exports = async function bridgespeak(fastify) {
     const uid = getUser(request, reply); if (uid == null) return;
     const geminiKey = request.headers['x-gemini-key'] || process.env.GEMINI_API_KEY;
     const { reference_text, user_transcript } = request.body || {};
-    if (!reference_text || !user_transcript)
-      return reply.code(400).send({ detail: 'reference_text and user_transcript required' });
+    if (!reference_text)
+      return reply.code(400).send({ detail: 'reference_text required' });
+    // Empty transcript = student didn't speak / mic cut off early
+    const transcript = (user_transcript || '').trim();
+    if (!transcript) {
+      return { pronunciation_score: 0, semantic_score: 0, total_score: 0,
+        scaffolding_text: "It looks like nothing was captured. Please try speaking louder and closer to your microphone.",
+        scaffolding_triggered: false, streak: 0, wer: 1 };
+    }
 
-    const wer = computeWER(reference_text, user_transcript);
+    const wer = computeWER(reference_text, transcript);
     const pronunciation_score = Math.max(0, Math.round((1 - wer) * 100));
 
     let semantic_score = 70, scaffolding_text = '', scaffolding_triggered = false;
@@ -180,7 +187,7 @@ Respond ONLY as valid JSON: { "semantic_score": number, "feedback": string, "sca
     await pool.query(
       `INSERT INTO bs_practice (user_id, reference_text, user_transcript, pronunciation_score, semantic_score, total_score, scaffolding_text)
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [uid, reference_text, user_transcript, pronunciation_score, semantic_score, total_score, scaffolding_text]
+      [uid, reference_text, transcript, pronunciation_score, semantic_score, total_score, scaffolding_text]
     );
     await pool.query('UPDATE bs_users SET total_score = total_score + $1 WHERE id = $2', [total_score, uid]);
 

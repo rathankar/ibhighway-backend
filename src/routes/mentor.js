@@ -169,8 +169,8 @@ module.exports = async function mentorRoutes(app) {
       return reply.status(400).send({ error: 'Invalid tab. Must be ia, ee, or tok.' });
     }
 
-    if (!geminiKey || geminiKey.trim().length < 10) {
-      return reply.status(400).send({ error: 'Gemini API key not found. Please add your key in the IBHighway portal settings.' });
+    if (!geminiKey || geminiKey.trim().length < 5) {
+      return reply.status(400).send({ error: 'Gemini API key not found. Please add your key in the IBHighway portal.' });
     }
     if (!Array.isArray(history) || history.length === 0) {
       return reply.status(400).send({ error: 'history must be a non-empty array.' });

@@ -173,23 +173,27 @@ Respond ONLY as valid JSON: { "semantic_score": number, "feedback": string, "sca
 
     const total_score = parseFloat(((pronunciation_score * 0.6 + semantic_score * 0.4) / 10).toFixed(2));
 
-    // Update streak
-    const { rows: [user] } = await pool.query('SELECT * FROM bs_users WHERE id = $1', [uid]);
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const lastDate = user.last_practice_date ? user.last_practice_date.toISOString?.().slice(0,10) || String(user.last_practice_date).slice(0,10) : null;
-    let streak = user.streak || 0;
-    if (lastDate !== today) {
-      streak = lastDate === yesterday ? streak + 1 : 1;
-      await pool.query('UPDATE bs_users SET streak = $1, last_practice_date = $2 WHERE id = $3', [streak, today, uid]);
+    // Update streak + save to DB (non-fatal if DB fails)
+    let streak = 0;
+    try {
+      const { rows: [user] } = await pool.query('SELECT * FROM bs_users WHERE id = $1', [uid]);
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const lastDate = user.last_practice_date ? user.last_practice_date.toISOString?.().slice(0,10) || String(user.last_practice_date).slice(0,10) : null;
+      streak = user.streak || 0;
+      if (lastDate !== today) {
+        streak = lastDate === yesterday ? streak + 1 : 1;
+        await pool.query('UPDATE bs_users SET streak = $1, last_practice_date = $2 WHERE id = $3', [streak, today, uid]);
+      }
+      await pool.query(
+        `INSERT INTO bs_practice (user_id, reference_text, user_transcript, pronunciation_score, semantic_score, total_score, scaffolding_text)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [uid, reference_text, transcript, pronunciation_score, semantic_score, total_score, scaffolding_text]
+      );
+      await pool.query('UPDATE bs_users SET total_score = total_score + $1 WHERE id = $2', [total_score, uid]);
+    } catch (dbErr) {
+      console.error('[BridgeSpeak] DB error in evaluate (non-fatal):', dbErr.message);
     }
-
-    await pool.query(
-      `INSERT INTO bs_practice (user_id, reference_text, user_transcript, pronunciation_score, semantic_score, total_score, scaffolding_text)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [uid, reference_text, transcript, pronunciation_score, semantic_score, total_score, scaffolding_text]
-    );
-    await pool.query('UPDATE bs_users SET total_score = total_score + $1 WHERE id = $2', [total_score, uid]);
 
     return { pronunciation_score, semantic_score, total_score, scaffolding_text, scaffolding_triggered, streak, wer: parseFloat(wer.toFixed(3)) };
   });

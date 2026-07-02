@@ -53,6 +53,8 @@ app.register(require('@fastify/cors'), {
     cb(new Error(`Origin ${origin} not allowed by CORS`), false);
   },
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Gemini-Key'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 });
 
 app.register(require('@fastify/rate-limit'), {

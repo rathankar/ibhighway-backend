@@ -2,11 +2,11 @@
 // POST /api/mentor  — proxy Gemini call with server-side system prompts
 
 const MODELS = [
-  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
   'gemini-1.5-flash',
+  'gemini-2.5-pro',
 ];
 
 // ── System prompts (server-side only) ──

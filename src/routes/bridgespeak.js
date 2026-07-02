@@ -42,8 +42,8 @@ initTables().catch(e => console.error('[BridgeSpeak] Table init error:', e.messa
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 async function callGemini(prompt, apiKey) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('No Gemini API key');
+  const key = apiKey;
+  if (!key) throw new Error('No Gemini API key. Please add your key in the IBHighway portal.');
   for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
@@ -126,7 +126,7 @@ module.exports = async function bridgespeak(fastify) {
   // POST /api/bridgespeak/practice/evaluate
   fastify.post('/practice/evaluate', async (request, reply) => {
     const uid = getUser(request, reply); if (uid == null) return;
-    const geminiKey = request.headers['x-gemini-key'] || process.env.GEMINI_API_KEY;
+    const geminiKey = request.headers['x-gemini-key'] ;
     const { reference_text, user_transcript } = request.body || {};
     if (!reference_text)
       return reply.code(400).send({ detail: 'reference_text required' });
@@ -215,7 +215,7 @@ Respond ONLY as valid JSON: { "semantic_score": number, "feedback": string, "sca
   // POST /api/bridgespeak/tutor/chat
   fastify.post('/tutor/chat', async (request, reply) => {
     const uid = getUser(request, reply); if (uid == null) return;
-    const geminiKey = request.headers['x-gemini-key'] || process.env.GEMINI_API_KEY;
+    const geminiKey = request.headers['x-gemini-key'] ;
     const { message, context } = request.body || {};
     const prompt = `You are BridgeSpeak Tutor, a friendly AI English fluency coach for school students in India. Keep responses concise (2-4 sentences). Context: ${context || 'General English practice'}. Student asks: "${message}"`;
     try {
@@ -229,7 +229,7 @@ Respond ONLY as valid JSON: { "semantic_score": number, "feedback": string, "sca
   // POST /api/bridgespeak/tutor/pronounce
   fastify.post('/tutor/pronounce', async (request, reply) => {
     const uid = getUser(request, reply); if (uid == null) return;
-    const geminiKey = request.headers['x-gemini-key'] || process.env.GEMINI_API_KEY;
+    const geminiKey = request.headers['x-gemini-key'] ;
     const { target_word, spoken_word, sentence_context } = request.body || {};
     const prompt = `Pronunciation coach for Indian school students. Guide for the word "${target_word}"${spoken_word ? ` (student said "${spoken_word}")` : ''}.
 Respond ONLY as valid JSON: { "word": string, "ipa": string, "syllables": string, "sounds_like": string, "mouth_tip": string, "common_mistake": string, "practice_phrase": string }`;
@@ -246,7 +246,7 @@ Respond ONLY as valid JSON: { "word": string, "ipa": string, "syllables": string
   // POST /api/bridgespeak/express/evaluate
   fastify.post('/express/evaluate', async (request, reply) => {
     const uid = getUser(request, reply); if (uid == null) return;
-    const geminiKey = request.headers['x-gemini-key'] || process.env.GEMINI_API_KEY;
+    const geminiKey = request.headers['x-gemini-key'] ;
     const { raw_input } = request.body || {};
     if (!raw_input) return reply.code(400).send({ detail: 'raw_input required' });
     const prompt = `A Tamil-speaking school student wants to ask their teacher a question, expressed informally in Tanglish.

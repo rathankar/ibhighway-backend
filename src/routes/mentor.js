@@ -138,14 +138,16 @@ async function callGemini(geminiKey, sys, history) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return { text: text.trim(), model };
+        // Gemini returned 200 but no text — safety block or empty response
+        const finishReason = data.candidates?.[0]?.finishReason || 'UNKNOWN';
+        lastErr = `Model ${model} returned no text (finishReason: ${finishReason})`;
+        continue; // try next model
       }
-      const errData = await res.json().catch(() => ({}));
-      lastErr = errData.error?.message || `HTTP ${res.status}`;
-      // Only try next model on quota/unavailable errors
+      lastErr = data.error?.message || `HTTP ${res.status}`;
       const isModelErr = ['quota', 'unavailable', 'deprecated', 'not found', 'does not exist']
         .some(e => lastErr.toLowerCase().includes(e));
       if (!isModelErr) throw new Error(lastErr);

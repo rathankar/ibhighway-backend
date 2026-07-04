@@ -562,4 +562,9 @@ module.exports = async function clarifyai(fastify) {
         c && typeof c.front === 'string' && typeof c.back === 'string'
       ).slice(0, 15).map(c => ({ front: c.front, back: c.back, topic: String(c.topic || 'General') }));
       if (cards.length < 5)
-     
+        return reply.code(500).send({ error: 'Not enough flashcards generated. Please try again.' });
+      return reply.send({ cards });
+    } catch (err) { return sendError(reply, err); }
+  });
+
+}; // end clarifyai plugin

@@ -98,6 +98,7 @@ app.register(require('./routes/tok-diary'),        { prefix: '/api' });
 app.register(require('./routes/research-to-lab'),  { prefix: '/api' });
 app.register(require('./routes/mentor'),           { prefix: '/api' });
 app.register(require('./routes/bridgespeak'),      { prefix: '/api/bridgespeak' });
+app.register(require('./routes/clarifyai'),        { prefix: '/api/clarifyai', bodyLimit: 20 * 1024 * 1024 });
 app.register(require('./routes/ee-compass'),       { prefix: '/api/ee-compass' });
 app.register(require('./routes/fbd-log'),          { prefix: '/api/fbd-log' });
 app.register(require('./routes/tool-log'),         { prefix: '/api/tool-log' });

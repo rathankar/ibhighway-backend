@@ -1262,7 +1262,7 @@ function buildUCASPrompt(profile, answers) {
 
 Generate a UCAS personal statement for the student whose profile and questionnaire answers are provided below.
 
-HARD RULES:
+CONTENT RULES:
 1. Maximum 3,900 characters. This is a hard limit — UCAS rejects statements over 4,000 characters.
 2. No bullet points. Continuous prose only, flowing academic paragraphs.
 3. Do NOT begin with the word "I". This is a UCAS convention — it reads as weak.
@@ -1272,6 +1272,12 @@ HARD RULES:
 7. The statement must feel written by THIS student for THEIR subject — not a template with names swapped.
 8. If the student has read specific books or papers, name them in the statement.
 9. If the student has done research, shadowing, or a lab attachment, make it central.
+
+OUTPUT FORMAT — CRITICAL:
+- Do NOT use any markdown whatsoever: no #, ##, ###, **, *, _, ~~, ---, or similar symbols.
+- Output ONLY paragraphs of plain prose separated by blank lines.
+- This is a continuous personal statement — it has NO section headings. Write it as flowing paragraphs.
+- Do not label sections like "Hook:" or "Section 1:". Just write the prose.
 
 Target subject: ${profile.target_course || 'not specified'}
 Target universities: ${profile.target_universities || 'not specified'}
@@ -1283,9 +1289,9 @@ function buildCommonAppPrompt(profile, answers) {
 
 Generate a Common App essay for the student whose profile and questionnaire answers are provided below.
 
-Choose the most suitable Common App prompt based on the student's answers. State the chosen prompt number at the top of your response, then write the essay.
+Choose the most suitable Common App prompt based on the student's answers. State the chosen prompt number on the very first line, then write the essay.
 
-HARD RULES:
+CONTENT RULES:
 1. Maximum 640 words. NEVER exceed 650 words.
 2. First-person narrative, authentic voice.
 3. Tell ONE story in depth — not a highlight reel. The essay must have a specific scene, a specific moment.
@@ -1294,6 +1300,13 @@ HARD RULES:
 6. End with a forward-looking reflection — where does this take you?
 7. Avoid: lists of achievements, clichés like "from a young age", generic conclusions like "I learned that anything is possible".
 8. The essay must feel impossible to have been written by anyone other than this specific student.
+
+OUTPUT FORMAT — CRITICAL:
+- Do NOT use any markdown whatsoever: no #, ##, ###, **, *, _, ~~, ---, or similar symbols.
+- The first line should be: Prompt chosen: [number and prompt name]
+- Then a blank line, then the essay in flowing paragraphs separated by blank lines.
+- No section headings within the essay. Pure prose.
+- Do not bold or italicise any words.
 
 Target major: ${profile.target_course || 'not specified'}
 Target universities: ${profile.target_universities || 'not specified'}
@@ -1305,14 +1318,23 @@ function buildLORPrompt(profile, answers, teacherSubject) {
 
 Generate a structured LOR briefing document — NOT the letter itself. This is a document the STUDENT gives to the TEACHER to help the teacher write a strong letter.
 
-The document should include:
-1. Context: which universities and courses this letter is for, and what those programmes value
-2. The student's key qualities that this particular teacher is uniquely placed to speak to (based on the subject they teach)
-3. Specific incidents or moments from class that the teacher witnessed and could reference (pulled from the student's answers)
-4. What the other recommenders are likely covering (to avoid duplication)
-5. Concrete asks: specific examples, skills, or qualities the student hopes the teacher will mention
-6. Tone and length guidance for the teacher
-7. Deadline
+The document should include these sections in order:
+1. A salutation to the teacher
+2. Context: which universities and courses this letter is for, and what those programmes value
+3. Key qualities this teacher is uniquely placed to speak to (based on their subject)
+4. Specific incidents or moments from class the teacher witnessed and could reference
+5. What other recommenders are likely covering (to avoid duplication)
+6. Concrete asks: specific examples, skills, or qualities the student hopes will be mentioned
+7. Tone and length guidance for the teacher
+8. A polite closing
+
+OUTPUT FORMAT — CRITICAL:
+- Do NOT use any markdown: no #, ##, ###, **, *, _, ~~, ---, or similar symbols.
+- Use plain section headings written in title case on their own line, followed by the text (e.g. "Context" then the paragraph below it).
+- Write the salutation (Dear [Teacher name or "Dear Sir/Madam"]) as the first line.
+- Write the closing sign-off as the last line.
+- Paragraphs should be separated by a blank line.
+- No bullet points — write each point as a sentence or short paragraph.
 
 Teacher's subject: ${teacherSubject || 'not specified'}
 Target universities: ${profile.target_universities || 'not specified'}
@@ -1324,12 +1346,18 @@ function buildSOPPrompt(profile, answers) {
 
 Generate a Statement of Purpose for the student whose profile and questionnaire answers are provided below.
 
-HARD RULES:
+CONTENT RULES:
 1. 600–900 words. Academic and professional in tone.
 2. Structure: (a) Specific research interest or professional motivation, (b) Academic background and relevant achievements, (c) Specific relevant experience, (d) Why this particular programme, (e) Career goals.
 3. Every claim must be grounded in a specific detail from the profile.
 4. Name specific faculty members or research groups at the target university if provided.
 5. Avoid: generic statements of ambition, vague claims of passion, listing grades without context.
+
+OUTPUT FORMAT — CRITICAL:
+- Do NOT use any markdown: no #, ##, ###, **, *, _, ~~, ---, or similar symbols.
+- Write in flowing paragraphs only. No section headings — the sections should flow naturally.
+- Paragraphs separated by a blank line.
+- No bullet points. Pure prose.
 
 Target programme: ${profile.target_course || 'not specified'}
 Target universities: ${profile.target_universities || 'not specified'}
@@ -1343,12 +1371,18 @@ Generate a supplemental essay for the student's application to ${university}.
 
 Essay prompt: "${essayPrompt}"
 
-HARD RULES:
+CONTENT RULES:
 1. 300–350 words unless a different limit is specified in the prompt.
 2. Be specific to THIS university — generic "I love this school" essays fail.
 3. If "Why Us?": reference specific programmes, faculty, research centres, clubs, or traditions. Never say "prestigious" or "diverse community".
 4. If "Diversity/Identity": connect the student's background to what they will contribute to campus life.
 5. First-person. Authentic voice. Specific details.
+
+OUTPUT FORMAT — CRITICAL:
+- Do NOT use any markdown: no #, ##, ###, **, *, _, ~~, ---, or similar symbols.
+- Write in flowing paragraphs only. No headings. No labels.
+- Paragraphs separated by a blank line.
+- No bullet points. Pure prose.
 
 Student profile and answers below.`;
 }
@@ -1860,19 +1894,19 @@ module.exports = async function uniApply(fastify) {
     const { university, essay_prompt, model } = request.body || {};
     if (!university || !essay_prompt) return reply.code(400).send({ error: 'university and essay_prompt required' });
     try {
-      const [profileRes, answersRes, allAnswersRes5] = await Promise.all([
+      const [profileRes, answersRes] = await Promise.all([
         pool.query('SELECT * FROM uni_apply_profiles WHERE user_id = $1', [userId]),
         pool.query('SELECT question_id, status, main_answer, followup_answers FROM uni_apply_answers WHERE user_id = $1 AND status = $2', [userId, 'yes']),
-        pool.query('SELECT question_id FROM uni_apply_answers WHERE user_id = $1', [userId]),
       ]);
       const profile = profileRes.rows[0] || {};
       const answers = answersRes.rows;
 
+      const allAnswersRes5 = await pool.query('SELECT question_id FROM uni_apply_answers WHERE user_id = $1', [userId]);
       const answeredIds5   = new Set(allAnswersRes5.rows.map(r => r.question_id));
       const suppAnswered   = QUESTIONS.filter(q => q.impact.includes('supplemental') && answeredIds5.has(q.id)).length;
       if (suppAnswered < MIN_ANSWERS.supplemental) {
         return reply.code(400).send({
-          error: `Answer at least ${MIN_ANSWERS.supplemental} questions before generating a supplemental essay. You've answered ${suppAnswered} so far — ${MIN_ANSWERS.supplemental - suppAnswered} more to go.`,
+          error: `Answer at least ${MIN_ANSWERS.supplemental} questions before generating a supplemental essay. You have answered ${suppAnswered} so far.`,
           answered: suppAnswered, required: MIN_ANSWERS.supplemental,
         });
       }
@@ -1884,8 +1918,14 @@ module.exports = async function uniApply(fastify) {
       }).join('\n\n')}`;
 
       const text = await callGemini(key, systemPrompt, userContent, model || DEFAULT_MODEL);
-      return reply.send({ document: text, type: 'supplemental', university });
+      return reply.send({ document: text, type: 'supplemental' });
     } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+};
+r) {
       return sendError(reply, err);
     }
   });

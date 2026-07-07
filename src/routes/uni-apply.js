@@ -84,7 +84,7 @@ function sendError(reply, err) {
   if (err.message.includes('QUOTA') || err.message.includes('429')) {
     return reply.code(429).send({ error: 'Gemini quota exceeded. Try again later.' });
   }
-  return reply.code(500).send({ error: 'AI generation failed. Please try again.' });
+  return reply.code(500).send({ error: 'Server error: ' + err.message.substring(0, 120) });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

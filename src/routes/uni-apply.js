@@ -17,15 +17,9 @@
 
 const pool = require('../db');
 
-const REQUIRE_AUTH = true;
-
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL   = 'gemini-2.5-flash';
 
-// ── Minimum questions that must be answered (yes/no/in_progress) before
-//    a document can be generated. "No" answers count — Gemini works with
-//    whatever "yes" answers exist, but the student must have engaged with
-//    at least this many relevant questions first.
 const MIN_ANSWERS = {
   ucas:         25,
   commonapp:    25,
@@ -35,18 +29,16 @@ const MIN_ANSWERS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: Auth
+// HELPER: Auth via ibh_code (IBHighway student code, e.g. "IB1234")
+// Frontend sends this as X-Student-Code header. No JWT required.
 // ─────────────────────────────────────────────────────────────────────────────
 function getUser(request, reply) {
-  if (!REQUIRE_AUTH) return 1; // dev fallback
-  try {
-    const token = (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const payload = request.server.jwt.verify(token);
-    return payload.sub;
-  } catch (_) {
-    reply.code(401).send({ error: 'Invalid or expired token. Please log in again.' });
+  const code = (request.headers['x-student-code'] || '').trim().toUpperCase();
+  if (!code || code.length < 3) {
+    reply.code(401).send({ error: 'Not logged in. Please log in at ibhighway.com first.' });
     return null;
   }
+  return code;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1920,12 +1912,6 @@ module.exports = async function uniApply(fastify) {
       const text = await callGemini(key, systemPrompt, userContent, model || DEFAULT_MODEL);
       return reply.send({ document: text, type: 'supplemental' });
     } catch (err) {
-      return sendError(reply, err);
-    }
-  });
-
-};
-r) {
       return sendError(reply, err);
     }
   });

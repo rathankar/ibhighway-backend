@@ -53,7 +53,7 @@ app.register(require('@fastify/cors'), {
     cb(new Error(`Origin ${origin} not allowed by CORS`), false);
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Gemini-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Gemini-Key', 'X-Student-Code'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 });
 
@@ -99,6 +99,7 @@ app.register(require('./routes/research-to-lab'),  { prefix: '/api' });
 app.register(require('./routes/mentor'),           { prefix: '/api' });
 app.register(require('./routes/bridgespeak'),      { prefix: '/api/bridgespeak' });
 app.register(require('./routes/clarifyai'),        { prefix: '/api/clarifyai', bodyLimit: 20 * 1024 * 1024 });
+app.register(require('./routes/uni-apply'),        { prefix: '/api/uni-apply' });
 app.register(require('./routes/ee-compass'),       { prefix: '/api/ee-compass' });
 app.register(require('./routes/fbd-log'),          { prefix: '/api/fbd-log' });
 app.register(require('./routes/tool-log'),         { prefix: '/api/tool-log' });

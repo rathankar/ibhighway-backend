@@ -38,7 +38,13 @@ function getUser(request, reply) {
     reply.code(401).send({ error: 'Not logged in. Please log in at ibhighway.com first.' });
     return null;
   }
-  return code;
+  // DB user_id is INTEGER — extract numeric portion of ibh_code (e.g. "IB0001" → 1)
+  const num = parseInt(code.replace(/\D/g, ''), 10);
+  if (!num) {
+    reply.code(400).send({ error: 'Invalid student code format.' });
+    return null;
+  }
+  return num;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

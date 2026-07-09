@@ -125,6 +125,49 @@ function getBrainstormPrompt(subject, turnCount, conversationHistory) {
     `\n\nConversation so far:\n${transcript}\n\nBuddy:`;
 }
 
+// Full-document review, run once the student has filled in all 17 sections.
+// `sectionsText` is the concatenated raw Q&A text the client already has on
+// screen (nothing new is revealed by sending it -- it's the student's own
+// answers) -- only the instructions/rubric wrapper is server-side.
+function getFullReviewPrompt(subject, sectionsText) {
+  return `You are an experienced IB examiner producing a full Internal Assessment review document.
+
+Subject: ${subject}
+Student's IA content by section:
+${sectionsText}
+
+Write a comprehensive examiner review document. For each IB assessment criterion (Personal Engagement, Exploration, Analysis, Evaluation, Communication), provide:
+1. A mark band estimate (e.g. 3-4 out of 6)
+2. Specific strengths with reference to the student's work
+3. Specific areas for improvement with actionable suggestions
+4. Examiner comments
+
+End with an overall estimated total mark out of 24 and a summary of the most important things to fix before submission.
+
+Be honest, specific, and constructive. Reference actual content from the student's responses.`;
+}
+
+// Grading an already-written IA draft the student pastes in, against all 5
+// criteria at once, rather than section by section.
+function getGradePrompt(subject, studentText) {
+  return `You are an experienced IB examiner grading a complete Internal Assessment draft.
+
+Subject: ${subject}
+
+Full IA text submitted by the student:
+${studentText}
+
+Grade this IA against all five IB assessment criteria (Personal Engagement, Exploration, Analysis, Evaluation, Communication). For each criterion, provide:
+1. A mark band estimate with justification
+2. Specific strengths, quoting the student's own words where relevant
+3. Specific weaknesses and concrete, actionable fixes
+4. Examiner-style comments
+
+End with an overall estimated total mark out of 24 and a prioritized list of the top 3 things to fix before submission.
+
+Be honest, specific, and constructive.`;
+}
+
 module.exports = async function iaDiaryRoutes(app) {
 
   // POST /api/ia-review — section feedback
@@ -136,7 +179,10 @@ module.exports = async function iaDiaryRoutes(app) {
     try {
       const systemPrompt = getSystemPrompt(subject, step, spine || {});
       const fullPrompt   = `${systemPrompt}\n\nStudent Submission for ${step}:\n${studentInput}`;
-      const result = await callGemini(geminiKey, fullPrompt, 1500);
+      // 1500 was too tight for the strict 4-heading format (Overall Judgment,
+      // Coherence Check, Specific Feedback, Priority Fixes) -- responses were
+      // getting cut off mid-section on longer student submissions.
+      const result = await callGemini(geminiKey, fullPrompt, 2500);
       return reply.send(result);
     } catch (e) {
       return reply.code(500).send({ error: e.message });
@@ -152,6 +198,36 @@ module.exports = async function iaDiaryRoutes(app) {
     try {
       const prompt = getBrainstormPrompt(subject, turnCount || 0, conversationHistory || []);
       const result = await callGemini(geminiKey, prompt, 1500);
+      return reply.send(result);
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // POST /api/ia-generate — full document review (all 17 sections at once)
+  app.post('/ia-generate', async (req, reply) => {
+    const { subject, sectionsText, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !sectionsText) return reply.code(400).send({ error: 'Missing fields' });
+
+    try {
+      const prompt = getFullReviewPrompt(subject, sectionsText);
+      const result = await callGemini(geminiKey, prompt, 2500);
+      return reply.send(result);
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // POST /api/ia-grade — grade an existing, already-written IA draft
+  app.post('/ia-grade', async (req, reply) => {
+    const { subject, studentText, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !studentText) return reply.code(400).send({ error: 'Missing fields' });
+
+    try {
+      const prompt = getGradePrompt(subject, studentText);
+      const result = await callGemini(geminiKey, prompt, 2500);
       return reply.send(result);
     } catch (e) {
       return reply.code(500).send({ error: e.message });

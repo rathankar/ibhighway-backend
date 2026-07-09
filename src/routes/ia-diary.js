@@ -42,13 +42,18 @@ async function callGemini(geminiKey, prompt, maxTokens = 1500) {
   throw new Error('No compatible Gemini model found for your API key.');
 }
 
-function getSystemPrompt(subject, step, formData = {}) {
-  const spine = `
-Research Question: ${formData.rq || 'Not defined yet'}
-Independent Variable (IV): ${formData.variables_manager?.independent?.name || 'Not defined'}
-Dependent Variable (DV): ${formData.variables_manager?.dependent?.name || 'Not defined'}
-Controlled Variables: ${formData.variables_manager?.controls?.length > 0 ? formData.variables_manager.controls.map(c => c.name).join(', ') : 'Not defined'}
-Experimental System / Context: ${formData.context || 'Not defined'}
+// `spine` is flat strings pulled by the client from other sections the
+// student has already filled in (Research Question, Hypothesis & Variables,
+// Introduction) -- kept flat rather than a nested variables_manager object
+// because the deployed client stores answers as simple {id: text} pairs
+// per section, not a structured variables object.
+function getSystemPrompt(subject, step, spine = {}) {
+  const spineText = `
+Research Question: ${spine.rq || 'Not defined yet'}
+Independent Variable (IV): ${spine.iv || 'Not defined'}
+Dependent Variable (DV): ${spine.dv || 'Not defined'}
+Controlled Variables: ${spine.controls || 'Not defined'}
+Experimental System / Context: ${spine.context || 'Not defined'}
 `;
 
   const subjectFocus = {
@@ -61,7 +66,7 @@ Experimental System / Context: ${formData.context || 'Not defined'}
   const basePersona = `You are an experienced IB ${subject} IA examiner.
 The student has submitted work for the section: "${step}".
 You are provided with the Fixed Research Spine for this investigation:
-${spine}
+${spineText}
 TASK: Evaluate the student's response using TWO lenses:
 Lens 1: Section Quality (Local) — scientific accuracy, clarity, depth, correct terminology. ${subjectFocus}
 Lens 2: Document Coherence (Global) — check logical consistency with the Research Spine. Identify scope drift, variable swapping, or logical disconnects.
@@ -100,41 +105,36 @@ RESPONSE FORMAT (STRICT):
   return criteria ? `${basePersona}\n\nSPECIFIC CRITERIA FOR ${step.toUpperCase()}:\n${criteria}` : basePersona;
 }
 
+// `conversationHistory` is the plain transcript the client keeps itself:
+// [{ role: 'student'|'buddy', text }, ...]. Output format matches what the
+// client's chat widget parses: normal conversational text, and once a
+// research question is ready, a reply that STARTS with "RESEARCH QUESTION:"
+// followed by the question on that same line.
 function getBrainstormPrompt(subject, turnCount, conversationHistory) {
-  if (turnCount < 5) {
-    return `You are acting as an IB ${subject} supervisor during the idea generation stage.
-Your role is to encourage curiosity and help the student narrow broad interests into a testable direction.
-Check basic scientific plausibility and feasibility.
-CRITICAL: Ensure the topic is a valid physical system. REJECT ideas based on game rules, psychology, or pure math.
-You must ask guiding questions, suggest possible directions, flag obvious scientific or practical risks gently.
-Do NOT mention IB assessment criteria or marks. Do NOT use formal IA language (independent variable, dependent variable) unless the student uses it first.
-Do NOT reject ideas unless they are clearly impossible at school level.
-At the end (if appropriate): Propose ONE draft research question, clearly labelled as a draft that can be refined later.
-Tone: Conversational, supportive, curious, non-judgmental.
-Current State: Turn ${turnCount} of 5.
-History: ${JSON.stringify(conversationHistory)}`;
-  } else {
-    return `You are acting as an IB ${subject} supervisor.
-Based on the conversation below, propose a SINGLE, INFORMAL draft research question.
-Rules:
-1. Keep the tone exploratory (e.g., "How does X affect Y?" rather than "To determine the relationship...").
-2. Do NOT list variables (IV/DV) explicitly.
-3. Do NOT provide a justification or Rationale section.
-4. Output MUST be strictly JSON in this format: {"rq": "The informal draft question..."}
-History: ${JSON.stringify(conversationHistory)}`;
-  }
+  const shouldProposeRQ = (turnCount || 0) >= 4;
+  const transcript = (conversationHistory || [])
+    .map(m => (m.role === 'student' ? 'Student: ' : 'Buddy: ') + m.text)
+    .join('\n');
+
+  return `You are a friendly, encouraging AI brainstorming buddy helping an IB ${subject} student develop an idea for their Internal Assessment (IA). ` +
+    `Ask short, focused follow-up questions (one at a time) to help them narrow down: (1) a phenomenon or topic they're curious about, (2) a possible independent variable they could change, (3) a possible dependent variable they could measure, (4) whether it's feasible in a school lab. ` +
+    `Keep each reply to 2-4 sentences, conversational and warm. Use plain sentences only -- no markdown formatting (no **, no bullet lists, no headers). ` +
+    (shouldProposeRQ
+      ? `The conversation has gone on for a few turns now -- based on everything the student has told you, propose ONE clear, focused Research Question suitable for an IB ${subject} IA. Start your reply with "RESEARCH QUESTION:" followed by the question on the same line, then a short sentence of encouragement.`
+      : `Do not propose a final research question yet -- just ask the next most useful follow-up question based on what the student has said so far.`) +
+    `\n\nConversation so far:\n${transcript}\n\nBuddy:`;
 }
 
 module.exports = async function iaDiaryRoutes(app) {
 
   // POST /api/ia-review — section feedback
   app.post('/ia-review', async (req, reply) => {
-    const { subject, step, studentInput, formData, geminiKey } = req.body || {};
+    const { subject, step, studentInput, spine, geminiKey } = req.body || {};
     if (!geminiKey)     return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !step || !studentInput) return reply.code(400).send({ error: 'Missing fields' });
 
     try {
-      const systemPrompt = getSystemPrompt(subject, step, formData || {});
+      const systemPrompt = getSystemPrompt(subject, step, spine || {});
       const fullPrompt   = `${systemPrompt}\n\nStudent Submission for ${step}:\n${studentInput}`;
       const result = await callGemini(geminiKey, fullPrompt, 1500);
       return reply.send(result);

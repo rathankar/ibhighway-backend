@@ -99,8 +99,14 @@ async function callGemini(prompt, geminiKey, useSearch = false) {
   throw new Error('All Gemini models failed. Last: ' + lastError);
 }
 
+const { requireStudent } = require('../student-auth');
+
 module.exports = async function researchToLabRoutes(app) {
-  app.post('/research-to-lab', async (req, reply) => {
+  app.post('/research-to-lab', {
+    config: { rateLimit: { max: 15, timeWindow: '1 minute' } }
+  }, async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { topic, geminiKey } = req.body || {};
     if (!topic || !geminiKey) {
       return reply.status(400).send({ error: 'topic and geminiKey are required' });

@@ -168,10 +168,15 @@ End with an overall estimated total mark out of 24 and a prioritized list of the
 Be honest, specific, and constructive.`;
 }
 
+const { requireStudent, checkDiaryRun, useDiaryRun } = require('../student-auth');
+const RL = (max) => ({ config: { rateLimit: { max, timeWindow: '1 minute' } } });
+
 module.exports = async function iaDiaryRoutes(app) {
 
   // POST /api/ia-review — section feedback
-  app.post('/ia-review', async (req, reply) => {
+  app.post('/ia-review', RL(30), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { subject, step, studentInput, spine, geminiKey } = req.body || {};
     if (!geminiKey)     return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !step || !studentInput) return reply.code(400).send({ error: 'Missing fields' });
@@ -190,7 +195,9 @@ module.exports = async function iaDiaryRoutes(app) {
   });
 
   // POST /api/ia-brainstorm — idea generation chat
-  app.post('/ia-brainstorm', async (req, reply) => {
+  app.post('/ia-brainstorm', RL(30), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { subject, turnCount, conversationHistory, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject)   return reply.code(400).send({ error: 'Missing subject' });
@@ -205,22 +212,34 @@ module.exports = async function iaDiaryRoutes(app) {
   });
 
   // POST /api/ia-generate — full document review (all 17 sections at once)
-  app.post('/ia-generate', async (req, reply) => {
+  app.post('/ia-generate', RL(10), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { subject, sectionsText, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !sectionsText) return reply.code(400).send({ error: 'Missing fields' });
 
+    // Shared IA/EE/TOK run cap — enforced HERE so direct API calls can't
+    // bypass it. Checked before generating, consumed only after success.
+    const runs = await checkDiaryRun(student.code);
+    if (runs.blocked) {
+      return reply.code(429).send({ error: 'You have used all of your diary generations (shared across IA, EE, and TOK Diary). This limit does not reset automatically.' });
+    }
+
     try {
       const prompt = getFullReviewPrompt(subject, sectionsText);
       const result = await callGemini(geminiKey, prompt, 2500);
-      return reply.send(result);
+      const run = await useDiaryRun(student.code);
+      return reply.send({ ...result, runMessage: run.message || run.error || null });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }
   });
 
   // POST /api/ia-grade — grade an existing, already-written IA draft
-  app.post('/ia-grade', async (req, reply) => {
+  app.post('/ia-grade', RL(10), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { subject, studentText, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !studentText) return reply.code(400).send({ error: 'Missing fields' });

@@ -69,11 +69,15 @@ Do NOT give MCQs or test questions. Instead, describe exactly what the student s
 - Any common misconceptions that disappear once the topic is truly understood`;
 }
 
+const { requireStudent } = require('../student-auth');
+
 module.exports = async function coachRoutes(app) {
   // POST /api/coach — generate a study guide
   app.post('/', {
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } }
   }, async (req, reply) => {
+    const student = await requireStudent(req, reply, 1);
+    if (!student) return;
     const { subject, level, topic, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !topic) return reply.code(400).send({ error: 'Missing subject or topic' });

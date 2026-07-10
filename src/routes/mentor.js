@@ -1,12 +1,15 @@
 // mentor.js — IBHighway backend route
 // POST /api/mentor  — proxy Gemini call with server-side system prompts
 
+// Agreed fallback order (2.5–3.5 family only; dead 1.5/2.0 models removed).
 const MODELS = [
+  'gemini-3.5-flash',
+  'gemini-3.1-pro',
+  'gemini-3.1-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.5-pro',
 ];
 
 // ── System prompts (server-side only) ──
@@ -161,10 +164,14 @@ async function callGemini(geminiKey, sys, history) {
   throw new Error('All Gemini models failed. Last error: ' + lastErr);
 }
 
+const { requireStudent } = require('../student-auth');
+
 module.exports = async function mentorRoutes(app) {
   app.post('/mentor', {
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } }
   }, async (req, reply) => {
+    const student = await requireStudent(req, reply, 1);
+    if (!student) return;
     const { tab, qCount, history, geminiKey, isFinal } = req.body || {};
 
     if (!tab || !['ia', 'ee', 'tok'].includes(tab)) {

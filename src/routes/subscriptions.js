@@ -33,14 +33,38 @@ function verifyRazorpaySignature({ order_id, payment_id, signature }) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const STUDENT_FEE = 1500; // Rs.1500/year (includes 1 IB Project Diary credit)
+// Tier pricing -- the ONLY payment on the platform
+// Tier 1: Rs.1,999/year, Tier 2: Rs.3,999/year
+const TIER_PRICES = { 1: 1999, 2: 3999 };
+
+// Promo code: "ibphysicswithrao"
+// Bypasses Razorpay entirely and activates the chosen tier for free --
+// but ONLY while the promo window is open (through 31 Jul 2026, IST).
+// Whatever day it's redeemed, access still hard-expires at midnight
+// 1 Aug 2026 IST (not a rolling year). From 1 Aug 2026 the code is
+// rejected unconditionally and students must pay the real price.
+const PROMO_CODE        = 'ibphysicswithrao';
+// 31 Jul 2026 23:59:59 IST  ==  2026-07-31T18:29:59Z
+const PROMO_CUTOFF_UTC  = new Date('2026-07-31T18:29:59Z');
+// 1 Aug 2026 00:00:00 IST   ==  2026-07-31T18:30:00Z
+const PROMO_HARD_EXPIRY = new Date('2026-07-31T18:30:00Z');
+
+function isPromoWindowOpen() {
+  return new Date() <= PROMO_CUTOFF_UTC;
+}
 
 module.exports = async function subscriptionRoutes(app) {
 
   // POST /api/subscriptions/create-order
+  // Body: { tier: 1|2, promo_code?: string }
   app.post('/create-order', { onRequest: [app.authenticate] }, async (req, reply) => {
     if (req.user.role !== 'student')
       return reply.code(403).send({ error: 'Only students can subscribe' });
+
+    const { tier, promo_code } = req.body || {};
+    const tierNum = parseInt(tier, 10);
+    if (![1, 2].includes(tierNum))
+      return reply.code(400).send({ error: 'tier must be 1 or 2' });
 
     const existing = await pool.query(
       `SELECT id, expires_at FROM subscriptions
@@ -56,11 +80,42 @@ module.exports = async function subscriptionRoutes(app) {
       });
     }
 
+    // Promo code path -- skips Razorpay entirely, only until 31 Jul
+    if (promo_code) {
+      if (String(promo_code).trim().toLowerCase() !== PROMO_CODE) {
+        return reply.code(400).send({ error: 'Invalid promo code.' });
+      }
+      if (!isPromoWindowOpen()) {
+        return reply.code(410).send({
+          error: 'The promo code "ibphysicswithrao" expired on 31 July and no longer works. Please subscribe with payment.',
+        });
+      }
+
+      const startsAt = new Date();
+      const subRes = await pool.query(
+        `INSERT INTO subscriptions (user_id, type, tier, amount, status, is_promo, starts_at, expires_at)
+         VALUES ($1,'student_annual',$2,0,'active',TRUE,$3,$4) RETURNING id`,
+        [req.user.id, tierNum, startsAt, PROMO_HARD_EXPIRY]
+      );
+
+      return {
+        promo: true,
+        subscription_id: subRes.rows[0].id,
+        tier: tierNum,
+        expires_at: PROMO_HARD_EXPIRY,
+        message: 'Tier ' + tierNum + ' activated free via promo code -- valid only until 31 July. ' +
+          'From 1 August you will need to pay Rs.' + TIER_PRICES[tierNum] + ' to keep access. ' +
+          'Anything you save before then stays safe and becomes visible again as soon as you pay.',
+      };
+    }
+
+    // Paid path
+    const amount = TIER_PRICES[tierNum];
     let order_id, key_id_public, mock = false;
     try {
       if (isRealRazorpay()) {
         const order = await createRazorpayOrder({
-          amount: STUDENT_FEE, currency: 'INR',
+          amount, currency: 'INR',
           receipt: 'student_sub_' + req.user.id + '_' + Date.now(),
         });
         order_id      = order.id;
@@ -76,14 +131,14 @@ module.exports = async function subscriptionRoutes(app) {
     }
 
     const subRes = await pool.query(
-      `INSERT INTO subscriptions (user_id, type, razorpay_order_id, amount, status)
-       VALUES ($1,'student_annual',$2,$3,'pending') RETURNING id`,
-      [req.user.id, order_id, STUDENT_FEE]
+      `INSERT INTO subscriptions (user_id, type, tier, razorpay_order_id, amount, status)
+       VALUES ($1,'student_annual',$2,$3,$4,'pending') RETURNING id`,
+      [req.user.id, tierNum, order_id, amount]
     );
 
     return {
       subscription_id: subRes.rows[0].id,
-      order_id, key_id: key_id_public, amount: STUDENT_FEE, currency: 'INR', mock,
+      order_id, key_id: key_id_public, amount, tier: tierNum, currency: 'INR', mock,
     };
   });
 
@@ -125,7 +180,7 @@ module.exports = async function subscriptionRoutes(app) {
       [rzpPid, startsAt, expiresAt, subscription_id]
     );
 
-    // Award 1 registration credit (IB Project Diary — diary mode)
+    // Award 1 registration credit (IB Project Diary -- diary mode)
     const existingCredit = await pool.query(
       "SELECT id FROM student_credits WHERE student_id=$1 AND coin_type='registration'",
       [req.user.id]
@@ -138,25 +193,36 @@ module.exports = async function subscriptionRoutes(app) {
       );
     }
 
+    // Real payment always re-opens full access to this account, so any
+    // diary/tool work saved earlier (e.g. during a promo period that then
+    // lapsed) becomes visible and downloadable again immediately -- nothing
+    // is ever deleted when access is locked, only gated.
     return {
       ok: true,
+      tier: sub.tier,
       expires_at: expiresAt,
-      message: 'Subscription activated! You have received 1 IB Project Diary credit.',
+      message: 'Subscription activated! Any previously saved work is now unlocked, and you have received 1 IB Project Diary credit.',
     };
   });
 
   // GET /api/subscriptions/status
   app.get('/status', { onRequest: [app.authenticate] }, async (req) => {
     const res = await pool.query(
-      `SELECT id, status, starts_at, expires_at
+      `SELECT id, tier, status, is_promo, starts_at, expires_at
        FROM subscriptions
        WHERE user_id=$1 AND type='student_annual'
        ORDER BY expires_at DESC LIMIT 1`,
       [req.user.id]
     );
     const sub = res.rows[0];
-    if (!sub) return { active: false, expires_at: null };
+    if (!sub) return { active: false, tier: null, expires_at: null };
     const active = sub.status === 'active' && new Date(sub.expires_at) > new Date();
-    return { active, expires_at: sub.expires_at, status: sub.status };
+    return {
+      active,
+      tier: sub.tier,
+      is_promo: sub.is_promo || false,
+      expires_at: sub.expires_at,
+      status: sub.status,
+    };
   });
 };

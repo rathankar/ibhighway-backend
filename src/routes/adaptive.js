@@ -259,11 +259,15 @@ const ACTIONS = {
   's4-report':    { build: (p) => s4ReportPrompt(p),       max: 8000, chat: false },
 };
 
+const { requireStudent } = require('../student-auth');
+
 module.exports = async function adaptiveRoutes(app) {
   // POST /api/adaptive
   app.post('/', {
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } }
   }, async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { action, params, history, maxTokens, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     const a = ACTIONS[action];

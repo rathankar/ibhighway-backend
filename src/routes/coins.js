@@ -2,8 +2,6 @@ const pool = require('../db');
 
 const MENTOR_COST  = 5;
 const DIARY_COST   = 10;
-const CLAIM_COINS  = 50;
-const CLAIM_AMOUNT = 1000;
 
 async function getCoinBalance(studentId) {
   const res = await pool.query(
@@ -76,11 +74,6 @@ module.exports = async function coinRoutes(app) {
       [req.user.id]
     );
 
-    const pendingClaim = await pool.query(
-      "SELECT id, status, claimed_at FROM coin_claims WHERE student_id=$1 AND status='pending'",
-      [req.user.id]
-    );
-
     const totalEarned = await pool.query(
       'SELECT COALESCE(SUM(amount),0) AS total FROM coin_ledger WHERE student_id=$1 AND amount > 0',
       [req.user.id]
@@ -89,13 +82,10 @@ module.exports = async function coinRoutes(app) {
     return {
       balance,
       total_earned:      parseInt(totalEarned.rows[0].total),
-      can_claim:         balance >= CLAIM_COINS && pendingClaim.rows.length === 0,
       can_redeem_mentor: balance >= MENTOR_COST,
       can_redeem_diary:  balance >= DIARY_COST,
       mentor_cost:       MENTOR_COST,
       diary_cost:        DIARY_COST,
-      claim_threshold:   CLAIM_COINS,
-      pending_claim:     pendingClaim.rows[0] || null,
       ledger:            ledger.rows,
     };
   });
@@ -138,143 +128,6 @@ module.exports = async function coinRoutes(app) {
       );
       await client.query('COMMIT');
       return { ok: true, coins_spent: cost, runs_granted: runs, type, new_balance: balance - cost };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  });
-
-  // POST /api/coins/claim
-  app.post('/claim', { onRequest: [app.authenticate] }, async (req, reply) => {
-    if (req.user.role !== 'student')
-      return reply.code(403).send({ error: 'Students only' });
-
-    const { bank_details } = req.body || {};
-    if (!bank_details || bank_details.trim().length < 10)
-      return reply.code(400).send({ error: 'bank_details is required (account number, IFSC, account holder name)' });
-
-    const balance = await getCoinBalance(req.user.id);
-    if (balance < CLAIM_COINS)
-      return reply.code(400).send({
-        error: `You need ${CLAIM_COINS} coins to claim. You have ${balance}.`
-      });
-
-    const existing = await pool.query(
-      "SELECT id FROM coin_claims WHERE student_id=$1 AND status='pending'",
-      [req.user.id]
-    );
-    if (existing.rows.length > 0)
-      return reply.code(400).send({ error: 'You already have a pending claim being processed.' });
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO coin_ledger (student_id, amount, source, description)
-         VALUES ($1, -500, 'claim_reward', 'Claimed ₹10,000 reward — 500 coins redeemed')`,
-        [req.user.id]
-      );
-      const claimRes = await client.query(
-        `INSERT INTO coin_claims (student_id, coins_used, amount_rs, bank_details)
-         VALUES ($1, 500, 10000, $2) RETURNING id`,
-        [req.user.id, bank_details.trim()]
-      );
-      await client.query('COMMIT');
-
-      try {
-        const studentRes = await pool.query(
-          'SELECT name, email, phone FROM users WHERE id=$1', [req.user.id]
-        );
-        const s = studentRes.rows[0];
-        const { sendMail } = require('../email');
-        await sendMail({
-          to: process.env.ADMIN_EMAIL,
-          subject: '🎉 IBHighway: New ₹10,000 Coin Reward Claim',
-          html: `
-            <h2>New Reward Claim</h2>
-            <p><strong>Student:</strong> ${s.name} (${s.email})</p>
-            <p><strong>Phone:</strong> ${s.phone || 'N/A'}</p>
-            <p><strong>Bank details:</strong><br/>${bank_details.replace(/\n/g,'<br/>')}</p>
-            <p><strong>Claim ID:</strong> #${claimRes.rows[0].id}</p>
-            <p>Please review and pay in the <a href="${process.env.APP_BASE_URL}/admin">Admin Panel</a>.</p>
-          `,
-        });
-      } catch (e) {
-        console.error('Claim email failed:', e.message);
-      }
-
-      return {
-        ok: true,
-        claim_id: claimRes.rows[0].id,
-        message: 'Claim submitted! You will receive ₹10,000 within 3–5 business days once verified.',
-      };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  });
-
-  // ADMIN: GET /api/coins/admin/claims
-  app.get('/admin/claims', { onRequest: [app.authenticate] }, async (req, reply) => {
-    if (req.user.role !== 'admin')
-      return reply.code(403).send({ error: 'Admin only' });
-
-    const res = await pool.query(`
-      SELECT cc.*, u.name AS student_name, u.email AS student_email, u.phone AS student_phone,
-             COALESCE((SELECT SUM(cl.amount) FROM coin_ledger cl WHERE cl.student_id = cc.student_id), 0) AS current_balance
-      FROM coin_claims cc
-      JOIN users u ON cc.student_id = u.id
-      ORDER BY cc.claimed_at DESC
-    `);
-    return res.rows;
-  });
-
-  // ADMIN: PATCH /api/coins/admin/claims/:id/pay
-  app.patch('/admin/claims/:id/pay', { onRequest: [app.authenticate] }, async (req, reply) => {
-    if (req.user.role !== 'admin')
-      return reply.code(403).send({ error: 'Admin only' });
-
-    const { payment_ref, admin_notes } = req.body || {};
-    const res = await pool.query(
-      `UPDATE coin_claims
-       SET status='paid', paid_at=NOW(), payment_ref=$1, admin_notes=$2
-       WHERE id=$3 AND status='pending' RETURNING *`,
-      [payment_ref || null, admin_notes || null, req.params.id]
-    );
-    if (!res.rows[0]) return reply.code(404).send({ error: 'Claim not found or already processed' });
-    return { ok: true, claim: res.rows[0] };
-  });
-
-  // ADMIN: PATCH /api/coins/admin/claims/:id/reject
-  app.patch('/admin/claims/:id/reject', { onRequest: [app.authenticate] }, async (req, reply) => {
-    if (req.user.role !== 'admin')
-      return reply.code(403).send({ error: 'Admin only' });
-
-    const { admin_notes } = req.body || {};
-    const claimRes = await pool.query(
-      "SELECT * FROM coin_claims WHERE id=$1 AND status='pending'", [req.params.id]
-    );
-    if (!claimRes.rows[0]) return reply.code(404).send({ error: 'Claim not found or already processed' });
-
-    const claim = claimRes.rows[0];
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `INSERT INTO coin_ledger (student_id, amount, source, description, ref_id)
-         VALUES ($1, 500, 'claim_refund', 'Claim rejected — 500 coins refunded', $2)`,
-        [claim.student_id, claim.id]
-      );
-      await client.query(
-        `UPDATE coin_claims SET status='rejected', admin_notes=$1 WHERE id=$2`,
-        [admin_notes || null, req.params.id]
-      );
-      await client.query('COMMIT');
-      return { ok: true };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

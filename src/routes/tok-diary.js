@@ -338,10 +338,15 @@ Cross-AOK comparison: (Has the student genuinely compared how the two AOKs illum
 
 // ─── FASTIFY ROUTE REGISTRATION ──────────────────────────────────────────────
 
+const { requireStudent, checkDiaryRun, useDiaryRun } = require('../student-auth');
+const RL = (max) => ({ config: { rateLimit: { max, timeWindow: '1 minute' } } });
+
 module.exports = async function tokDiaryRoutes(app) {
 
   // POST /api/tok-review — per-stage, per-question AI feedback
-  app.post('/tok-review', async (req, reply) => {
+  app.post('/tok-review', RL(30), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { stage, studentInput, anchorData, geminiKey } = req.body || {};
     if (!geminiKey)
       return reply.code(400).send({ error: 'No Gemini key provided' });
@@ -358,15 +363,24 @@ module.exports = async function tokDiaryRoutes(app) {
   });
 
   // POST /api/tok-generate — full 6-stage review document
-  app.post('/tok-generate', async (req, reply) => {
+  app.post('/tok-generate', RL(10), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
     const { allStageData, anchorData, geminiKey } = req.body || {};
     if (!geminiKey)
       return reply.code(400).send({ error: 'No Gemini key provided' });
 
+    // Shared IA/EE/TOK run cap — server-side enforcement.
+    const runs = await checkDiaryRun(student.code);
+    if (runs.blocked) {
+      return reply.code(429).send({ error: 'You have used all of your diary generations (shared across IA, EE, and TOK Diary). This limit does not reset automatically.' });
+    }
+
     try {
       const prompt = buildFullReviewPrompt(allStageData || {}, anchorData || {});
       const result = await callGemini(geminiKey, prompt, 3000);
-      return reply.send(result);
+      const run = await useDiaryRun(student.code);
+      return reply.send({ ...result, runMessage: run.message || run.error || null });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }

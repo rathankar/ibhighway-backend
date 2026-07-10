@@ -57,6 +57,8 @@ async function callGemini(geminiKey, contents, maxTokens = 1000) {
   throw new Error('No compatible Gemini model found for your API key.');
 }
 
+const { requireStudent } = require('../student-auth');
+
 module.exports = async function misconceptionRoutes(app) {
   // POST /api/misconception — one Socratic turn.
   // Body: { history: [{role:'user'|'model', text:string}], wrapUp?: bool, geminiKey }
@@ -64,6 +66,8 @@ module.exports = async function misconceptionRoutes(app) {
   app.post('/', {
     config: { rateLimit: { max: 30, timeWindow: '1 minute' } }
   }, async (req, reply) => {
+    const student = await requireStudent(req, reply, 1);
+    if (!student) return;
     const { history, wrapUp, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!Array.isArray(history) || history.length === 0) {

@@ -114,13 +114,27 @@ app.get('/api/health', async () => ({
   time: new Date(),
 }));
 
+// Debug/admin endpoints — locked behind ADMIN_SECRET. Previously these were
+// open: anyone could trigger the reminder-email cron (spamming students /
+// burning email quota) or dump the full route map.
+function requireAdmin(req, reply) {
+  const token = req.headers['x-admin-token'];
+  if (!process.env.ADMIN_SECRET || token !== process.env.ADMIN_SECRET) {
+    reply.code(404).send({ error: 'Not found' }); // don't advertise existence
+    return false;
+  }
+  return true;
+}
+
 app.get('/api/test-deadline-cron', async (req, reply) => {
+  if (!requireAdmin(req, reply)) return;
   const { sendDeadlineReminders } = require('./deadline-cron');
   await sendDeadlineReminders();
   return { ok: true, message: 'Cron ran - check Railway logs and your inbox' };
 });
 
-app.get('/api/routes', async () => {
+app.get('/api/routes', async (req, reply) => {
+  if (!requireAdmin(req, reply)) return;
   return { routes: app.printRoutes() };
 });
 

@@ -78,7 +78,6 @@ app.decorate('authenticate', async (request, reply) => {
 app.register(require('./routes/auth'),             { prefix: '/api/auth' });
 app.register(require('./routes/teachers'),         { prefix: '/api/teachers' });
 app.register(require('./routes/bookings'),         { prefix: '/api/bookings' });
-app.register(require('./routes/payments'),         { prefix: '/api/payments' });
 app.register(require('./routes/leads'),            { prefix: '/api/leads' });
 app.register(require('./routes/admin'),            { prefix: '/api/admin' });
 app.register(require('./routes/teacher-apply'),    { prefix: '/api/teacher-apply' });
@@ -100,6 +99,9 @@ app.register(require('./routes/mentor'),           { prefix: '/api' });
 app.register(require('./routes/bridgespeak'),      { prefix: '/api/bridgespeak' });
 app.register(require('./routes/clarifyai'),        { prefix: '/api/clarifyai', bodyLimit: 20 * 1024 * 1024 });
 app.register(require('./routes/uni-apply'),        { prefix: '/api/uni-apply' });
+app.register(require('./routes/adaptive'),         { prefix: '/api/adaptive' });
+app.register(require('./routes/coach'),            { prefix: '/api/coach' });
+app.register(require('./routes/misconception'),    { prefix: '/api/misconception' });
 app.register(require('./routes/ee-compass'),       { prefix: '/api/ee-compass' });
 app.register(require('./routes/fbd-log'),          { prefix: '/api/fbd-log' });
 app.register(require('./routes/tool-log'),         { prefix: '/api/tool-log' });

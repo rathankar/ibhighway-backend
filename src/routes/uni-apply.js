@@ -83,7 +83,7 @@ function getGeminiKey(request, reply) {
 // HELPER: Gemini call
 // ─────────────────────────────────────────────────────────────────────────────
 async function callGemini(key, systemPrompt, userContent, model = DEFAULT_MODEL) {
-  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${key}`;
+  const url = `${GEMINI_API_BASE}/${model}:generateContent`;
   const body = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userContent }] }],
@@ -91,7 +91,7 @@ async function callGemini(key, systemPrompt, userContent, model = DEFAULT_MODEL)
   };
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -1920,26 +1920,4 @@ module.exports = async function uniApply(fastify) {
       const answers = answersRes.rows;
 
       const allAnswersRes5 = await pool.query('SELECT question_id FROM uni_apply_answers WHERE user_id = $1', [userId]);
-      const answeredIds5   = new Set(allAnswersRes5.rows.map(r => r.question_id));
-      const suppAnswered   = QUESTIONS.filter(q => q.impact.includes('supplemental') && answeredIds5.has(q.id)).length;
-      if (suppAnswered < MIN_ANSWERS.supplemental) {
-        return reply.code(400).send({
-          error: `Answer at least ${MIN_ANSWERS.supplemental} questions before generating a supplemental essay. You have answered ${suppAnswered} so far.`,
-          answered: suppAnswered, required: MIN_ANSWERS.supplemental,
-        });
-      }
-
-      const systemPrompt = buildSupplementalPrompt(profile, answers, university, essay_prompt);
-      const userContent  = `STUDENT PROFILE:\n${JSON.stringify(profile, null, 2)}\n\nQUESTIONNAIRE ANSWERS:\n${answers.map(a => {
-        const q = QUESTIONS.find(q => q.id === a.question_id);
-        return `[${a.question_id}] ${q?.title || ''}\nAnswer: ${a.main_answer || ''}`;
-      }).join('\n\n')}`;
-
-      const text = await callGemini(key, systemPrompt, userContent, model || DEFAULT_MODEL);
-      return reply.send({ document: text, type: 'supplemental' });
-    } catch (err) {
-      return sendError(reply, err);
-    }
-  });
-
-};
+      const answeredIds5   = new Set(allAnswersRes5.rows.map(r =

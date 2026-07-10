@@ -15,11 +15,11 @@ const MODELS = [
 
 async function callGemini(geminiKey, prompt, maxTokens = 2000) {
   for (const m of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent?key=${geminiKey}`;
+    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent`;
     try {
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 }

@@ -65,7 +65,7 @@ async function callGemini(prompt, geminiKey, useSearch = false) {
   let lastError = null;
   for (const m of MODELS) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent?key=${geminiKey}`;
+      const endpoint = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent`;
       const body = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 8000 }
@@ -75,7 +75,7 @@ async function callGemini(prompt, geminiKey, useSearch = false) {
       }
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
         body: JSON.stringify(body)
       });
       if (res.ok) {

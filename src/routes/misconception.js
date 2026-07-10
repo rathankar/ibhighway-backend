@@ -28,11 +28,11 @@ Your rules:
 
 async function callGemini(geminiKey, contents, maxTokens = 1000) {
   for (const m of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent?key=${geminiKey}`;
+    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent`;
     try {
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
         body: JSON.stringify({
           contents,
           systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },

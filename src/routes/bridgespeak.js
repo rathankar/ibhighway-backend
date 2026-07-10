@@ -47,8 +47,8 @@ async function callGemini(prompt, apiKey) {
   for (const model of GEMINI_MODELS) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
       );
       if (!res.ok) continue;

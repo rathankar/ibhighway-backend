@@ -127,7 +127,7 @@ async function callGemini(geminiKey, sys, history) {
   let lastErr = null;
   for (const model of MODELS) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const body = {
         contents: history.map(m => ({
           role: m.role === 'assistant' ? 'model' : 'user',
@@ -138,7 +138,7 @@ async function callGemini(geminiKey, sys, history) {
       };
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
         body: JSON.stringify(body)
       });
       const data = await res.json().catch(() => ({}));

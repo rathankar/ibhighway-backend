@@ -97,8 +97,8 @@ const CURRICULA = {
 const curriculumFor = (name) => CURRICULA[name] || CURRICULA['Other'];
 
 // ── Gemini helper ─────────────────────────────────────────────────────────────
-const GEMINI_URL = (model, key) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+const GEMINI_URL = (model) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 function friendlyGeminiError(status, apiMessage) {
   if (status === 429)
@@ -117,9 +117,9 @@ function friendlyGeminiError(status, apiMessage) {
 async function callGemini(key, model, parts, generationConfig) {
   let res;
   try {
-    res = await fetch(GEMINI_URL(model, key), {
+    res = await fetch(GEMINI_URL(model), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ parts }],
         generationConfig,

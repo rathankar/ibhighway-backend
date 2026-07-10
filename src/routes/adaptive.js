@@ -36,13 +36,13 @@ async function callGemini(geminiKey, prompt, history, maxTokens) {
   }
 
   for (const m of MODELS) {
-    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent?key=${geminiKey}`;
+    const url = `https://generativelanguage.googleapis.com/${m.api}/models/${m.model}:generateContent`;
     try {
       const body = { contents, generationConfig: { maxOutputTokens: maxTokens, temperature: 0.8 } };
       if (systemInstruction) body.systemInstruction = systemInstruction;
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
         body: JSON.stringify(body)
       });
       if (!r.ok) {

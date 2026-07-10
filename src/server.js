@@ -46,10 +46,21 @@ const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://l
   .map(s => s.trim())
   .filter(Boolean);
 
+// The tools are served from ibhighway.com (and www) but call this API at
+// api.ibhighway.com -- a different origin, so CORS applies. Always allow the
+// ibhighway.com apex and ANY of its subdomains over https, regardless of the
+// CORS_ORIGINS env var, so a missing/incomplete env var can never silently
+// block the live site again. The env list still covers localhost / extras.
+var IBH_ORIGIN_RE = /^https:\/\/([a-z0-9-]+\.)*ibhighway\.com$/i;
+function _corsAllowed(origin) {
+  if (!origin) return true;                    // server-to-server / curl
+  if (IBH_ORIGIN_RE.test(origin)) return true; // ibhighway.com + subdomains
+  return corsOrigins.includes(origin);         // localhost / explicit extras
+}
+
 app.register(require('@fastify/cors'), {
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (corsOrigins.includes(origin)) return cb(null, true);
+    if (_corsAllowed(origin)) return cb(null, true);
     cb(new Error(`Origin ${origin} not allowed by CORS`), false);
   },
   credentials: true,

@@ -32,19 +32,39 @@ const MIN_ANSWERS = {
 // HELPER: Auth via ibh_code (IBHighway student code, e.g. "IB1234")
 // Frontend sends this as X-Student-Code header. No JWT required.
 // ─────────────────────────────────────────────────────────────────────────────
-function getUser(request, reply) {
+// SECURITY: the code is VERIFIED against the access_codes table on every
+// request and the user_id is the DB row id — never derived from the header
+// value itself. Previously user_id was just parseInt(code digits), which let
+// anyone read/write any other student's data by sending a made-up code (IDOR).
+// Small in-memory cache keeps this to ~1 DB lookup per code per 5 minutes.
+const _codeCache = new Map(); // code → { id, expiry }
+const CODE_CACHE_MS = 5 * 60 * 1000;
+
+// Dev bypass — matches tools-auth.js test codes, mapped to reserved ids.
+const DEV_CODE_IDS = { 'IBH-TEST-0001': 999901, 'IBH-TEST-0002': 999902, 'IBH-TEST-0003': 999903 };
+
+async function getUser(request, reply) {
   const code = (request.headers['x-student-code'] || '').trim().toUpperCase();
   if (!code || code.length < 3) {
     reply.code(401).send({ error: 'Not logged in. Please log in at ibhighway.com first.' });
     return null;
   }
-  // DB user_id is INTEGER — extract numeric portion of ibh_code (e.g. "IB0001" → 1)
-  const num = parseInt(code.replace(/\D/g, ''), 10);
-  if (!num) {
-    reply.code(400).send({ error: 'Invalid student code format.' });
+  if (DEV_CODE_IDS[code]) return DEV_CODE_IDS[code];
+
+  const cached = _codeCache.get(code);
+  if (cached && cached.expiry > Date.now()) return cached.id;
+
+  const { rows } = await pool.query(
+    'SELECT id, is_active, expires_at FROM access_codes WHERE code = $1',
+    [code]
+  );
+  const row = rows[0];
+  if (!row || !row.is_active || (row.expires_at && new Date(row.expires_at) < new Date())) {
+    reply.code(401).send({ error: 'Invalid or expired access code. Please log in at ibhighway.com again.' });
     return null;
   }
-  return num;
+  _codeCache.set(code, { id: row.id, expiry: Date.now() + CODE_CACHE_MS });
+  return row.id;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1395,7 +1415,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── GET /profile ────────────────────────────────────────────────────────────
   fastify.get('/profile', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     try {
       const { rows } = await pool.query('SELECT * FROM uni_apply_profiles WHERE user_id = $1', [userId]);
@@ -1407,7 +1427,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /profile ───────────────────────────────────────────────────────────
   fastify.post('/profile', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const b = request.body || {};
     try {
@@ -1447,7 +1467,7 @@ module.exports = async function uniApply(fastify) {
   // Returns per-document-type progress: how many required questions answered,
   // how many remain, and whether the generation threshold is met.
   fastify.get('/doc-progress', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     try {
       const answersRes = await pool.query(
@@ -1479,7 +1499,7 @@ module.exports = async function uniApply(fastify) {
   // Returns the next unanswered questions for a specific document type,
   // along with progress toward the generation threshold.
   fastify.get('/questions/for-doc', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const docType = (request.query.type || '').toLowerCase();
     const impactKey = docType === 'lor-brief' ? 'lor' : docType;
@@ -1536,7 +1556,7 @@ module.exports = async function uniApply(fastify) {
   // ── GET /questions/next ─────────────────────────────────────────────────────
   // Returns the next N questions the student hasn't answered yet
   fastify.get('/questions/next', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const count = Math.min(parseInt(request.query.count || '4', 10), 8);
     try {
@@ -1582,7 +1602,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /questions/answer ──────────────────────────────────────────────────
   fastify.post('/questions/answer', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const { question_id, status, main_answer, followup_answers } = request.body || {};
     if (!question_id || !status) return reply.code(400).send({ error: 'question_id and status required' });
@@ -1632,7 +1652,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── GET /answers ────────────────────────────────────────────────────────────
   fastify.get('/answers', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     try {
       const { rows } = await pool.query(
@@ -1659,7 +1679,7 @@ module.exports = async function uniApply(fastify) {
   // ── GET /summary ─────────────────────────────────────────────────────────────
   // Profile completeness + progress stats
   fastify.get('/summary', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     try {
       const [profileRes, answersRes] = await Promise.all([
@@ -1697,7 +1717,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── GET /gap-analysis ────────────────────────────────────────────────────────
   fastify.get('/gap-analysis', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     try {
       const [profileRes, answersRes] = await Promise.all([
@@ -1723,7 +1743,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /generate/ucas ───────────────────────────────────────────────────────
   fastify.post('/generate/ucas', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const key = getGeminiKey(request, reply);
     if (!key) return;
@@ -1764,7 +1784,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /generate/commonapp ──────────────────────────────────────────────────
   fastify.post('/generate/commonapp', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const key = getGeminiKey(request, reply);
     if (!key) return;
@@ -1804,7 +1824,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /generate/lor-brief ──────────────────────────────────────────────────
   fastify.post('/generate/lor-brief', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const key = getGeminiKey(request, reply);
     if (!key) return;
@@ -1845,7 +1865,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /generate/sop ───────────────────────────────────────────────────────
   fastify.post('/generate/sop', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const key = getGeminiKey(request, reply);
     if (!key) return;
@@ -1885,7 +1905,7 @@ module.exports = async function uniApply(fastify) {
 
   // ── POST /generate/supplemental ──────────────────────────────────────────────
   fastify.post('/generate/supplemental', async (request, reply) => {
-    const userId = getUser(request, reply);
+    const userId = await getUser(request, reply);
     if (!userId) return;
     const key = getGeminiKey(request, reply);
     if (!key) return;

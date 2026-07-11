@@ -168,10 +168,46 @@ End with an overall estimated total mark out of 24 and a prioritized list of the
 Be honest, specific, and constructive.`;
 }
 
+// NEW (additive — does not touch the section/full-review/grade prompts above).
+// Focused feedback on ONE answer only, for the per-question diary panel: short,
+// plain-text, judges just that answer, and flags completion with [COMPLETE].
+function getQuestionFeedbackPrompt(subject, section, questionLabel, answer) {
+  return `You are an experienced IB ${subject} examiner giving quick feedback on ONE answer a student wrote in their Internal Assessment.
+
+Section: ${section}
+Question: ${questionLabel}
+Student's answer: ${answer}
+
+Give short, specific, encouraging feedback on THIS answer only. Rules:
+- 2 to 4 sentences of plain conversational English.
+- Name one thing done well and the single most important improvement.
+- Judge ONLY the answer given. Do NOT mention or assume other questions, and do NOT ask for content that belongs to a different question.
+- No markdown at all: no #, no *, no **, no headings, no bullet characters. Plain text only.
+- If this answer already fully and correctly addresses the question, end your reply with the exact tag [COMPLETE].`;
+}
+
 const { requireStudent, checkDiaryRun, useDiaryRun } = require('../student-auth');
 const RL = (max) => ({ config: { rateLimit: { max, timeWindow: '1 minute' } } });
 
 module.exports = async function iaDiaryRoutes(app) {
+
+  // POST /api/ia-question-feedback — feedback on a SINGLE answer (diary engine)
+  app.post('/ia-question-feedback', RL(40), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, section, questionLabel, answer, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !questionLabel || !answer) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getQuestionFeedbackPrompt(subject, section || '', questionLabel, answer);
+      const result = await callGemini(geminiKey, prompt, 400);
+      const text = (result.text || '');
+      const complete = /\[COMPLETE\]/i.test(text);
+      return reply.send({ text: text.replace(/\[COMPLETE\]/ig, '').trim(), model: result.model, complete });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
 
   // POST /api/ia-review — section feedback
   app.post('/ia-review', RL(30), async (req, reply) => {

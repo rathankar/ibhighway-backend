@@ -200,7 +200,7 @@ module.exports = async function iaDiaryRoutes(app) {
     if (!subject || !questionLabel || !answer) return reply.code(400).send({ error: 'Missing fields' });
     try {
       const prompt = getQuestionFeedbackPrompt(subject, section || '', questionLabel, answer);
-      const result = await callGemini(geminiKey, prompt, 400);
+      const result = await callGemini(geminiKey, prompt, 1500);
       const text = (result.text || '');
       const complete = /\[COMPLETE\]/i.test(text);
       return reply.send({ text: text.replace(/\[COMPLETE\]/ig, '').trim(), model: result.model, complete });

@@ -37,34 +37,36 @@ const MIN_ANSWERS = {
 // value itself. Previously user_id was just parseInt(code digits), which let
 // anyone read/write any other student's data by sending a made-up code (IDOR).
 // Small in-memory cache keeps this to ~1 DB lookup per code per 5 minutes.
-const _codeCache = new Map(); // code → { id, expiry }
-const CODE_CACHE_MS = 5 * 60 * 1000;
+const { verifyStudent } = require('../student-auth');
+const DEV_IDS = { 'IBH-TEST-0001': 999901, 'IBH-TEST-0002': 999902, 'IBH-TEST-0003': 999903 };
 
-// Dev bypass — matches tools-auth.js test codes, mapped to reserved ids.
-const DEV_CODE_IDS = { 'IBH-TEST-0001': 999901, 'IBH-TEST-0002': 999902, 'IBH-TEST-0003': 999903 };
-
+// SECURITY + CORRECTNESS: the code is VERIFIED as an active subscription via
+// auth.php (the same store every other tool and the client-side gate use)
+// before any data is touched. This closes the old IDOR (which trusted raw code
+// digits) AND works for real students, whose codes live in auth.php — not the
+// Supabase access_codes table the previous version queried (which returned no
+// row for real students and rejected everyone). The integer user_id is the
+// numeric part of the verified code (e.g. "IB0007" -> 7), matching how
+// uni-apply data was already stored, so no data migration is needed.
 async function getUser(request, reply) {
   const code = (request.headers['x-student-code'] || '').trim().toUpperCase();
   if (!code || code.length < 3) {
     reply.code(401).send({ error: 'Not logged in. Please log in at ibhighway.com first.' });
     return null;
   }
-  if (DEV_CODE_IDS[code]) return DEV_CODE_IDS[code];
-
-  const cached = _codeCache.get(code);
-  if (cached && cached.expiry > Date.now()) return cached.id;
-
-  const { rows } = await pool.query(
-    'SELECT id, is_active, expires_at FROM access_codes WHERE code = $1',
-    [code]
-  );
-  const row = rows[0];
-  if (!row || !row.is_active || (row.expires_at && new Date(row.expires_at) < new Date())) {
-    reply.code(401).send({ error: 'Invalid or expired access code. Please log in at ibhighway.com again.' });
+  try {
+    await verifyStudent(code);           // throws { statusCode, message } if invalid/inactive
+  } catch (e) {
+    reply.code(e.statusCode || 401).send({ error: e.message });
     return null;
   }
-  _codeCache.set(code, { id: row.id, expiry: Date.now() + CODE_CACHE_MS });
-  return row.id;
+  if (DEV_IDS[code]) return DEV_IDS[code];
+  const num = parseInt(code.replace(/\D/g, ''), 10);
+  if (!num) {
+    reply.code(400).send({ error: 'Invalid student code format.' });
+    return null;
+  }
+  return num;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

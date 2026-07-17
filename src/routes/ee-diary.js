@@ -415,7 +415,7 @@ function getEEBrainstormPrompt(subject, interest, secondSubject, framework) {
     "POSSIBLE SUBJECT PAIRINGS:\n(Suggest 2-3 second DP subjects that pair naturally with " + subject + " for this interest, each with one sentence on what that discipline would add. Where it fits, include a second science — e.g. Physics with Biology, or Chemistry with Biology.)\n\n" +
     "BEST-FIT FRAMEWORK:\n(Name the one or two of the five frameworks that suit this interest, and why in one sentence each.)\n\n" +
     "TOPIC ANGLES TO EXPLORE:\n(Two or three example directions phrased as questions the student could pursue — hints, not a finished research question. Each must clearly need BOTH disciplines.)\n\n" +
-    "QUESTIONS TO ASK YOURSELF:\n(Pose the four IB workshop questions adapted to their interest: what aspect really interests you; why is an interdisciplinary approach necessary; which framework fits; which two DP subjects integrate logically.)\n\n" +
+    "QUESTIONS TO ASK YOURSELF:\n(Pose these guiding questions adapted to their interest: what aspect really interests you; why is an interdisciplinary approach necessary; which framework fits; which two DP subjects integrate logically.)\n\n" +
     "Keep it concise and encouraging. Do NOT write a final research question for them — the choice stays with the student.";
 }
 

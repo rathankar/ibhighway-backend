@@ -169,21 +169,69 @@ Be honest, specific, and constructive.`;
 }
 
 // NEW (additive — does not touch the section/full-review/grade prompts above).
-// Focused feedback on ONE answer only, for the per-question diary panel: short,
-// plain-text, judges just that answer, and flags completion with [COMPLETE].
-function getQuestionFeedbackPrompt(subject, section, questionLabel, answer) {
-  return `You are an experienced IB ${subject} examiner giving quick feedback on ONE answer a student wrote in their Internal Assessment.
+// Per-question feedback that is COHERENCE-AWARE: it receives the student's
+// research spine (RQ + hypothesis + variables + method) and checks the answer
+// against it, so a mismatch (e.g. electricity apparatus under a pendulum RQ) is
+// caught. Output is a strict 3-section format and never reveals the answer.
+function _spineBlock(spine) {
+  spine = spine || {};
+  return `THE STUDENT'S INVESTIGATION (their research spine — every answer must be consistent with this):
+Research Question: ${spine.rq || '(not stated yet)'}
+Hypothesis: ${spine.hypothesis || '(not stated yet)'}
+Independent Variable: ${spine.iv || '(not stated yet)'}
+Dependent Variable: ${spine.dv || '(not stated yet)'}
+Controlled Variables: ${spine.controls || '(not stated yet)'}
+Method / Procedure: ${spine.method || '(not stated yet)'}`;
+}
+
+function getQuestionFeedbackPrompt(subject, section, questionLabel, answer, spine) {
+  return `You are an experienced IB ${subject} examiner giving feedback on ONE answer in a student's Internal Assessment.
+
+${_spineBlock(spine)}
 
 Section: ${section}
 Question: ${questionLabel}
 Student's answer: ${answer}
 
-Give short, specific, encouraging feedback on THIS answer only. Rules:
-- 2 to 4 sentences of plain conversational English.
-- Name one thing done well and the single most important improvement.
-- Judge ONLY the answer given. Do NOT mention or assume other questions, and do NOT ask for content that belongs to a different question.
-- No markdown at all: no #, no *, no **, no headings, no bullet characters. Plain text only.
-- If this answer already fully and correctly addresses the question, end your reply with the exact tag [COMPLETE].`;
+FIRST, silently check coherence: does this answer fit the research question and variables above? A serious and common mistake is a student pasting details from a DIFFERENT experiment (for example, electricity apparatus when their research question is about a pendulum). If the answer is inconsistent with the research spine, that inconsistency is the MOST important thing to raise.
+
+Then reply in EXACTLY these three labelled sections, in this order, plain text only (no #, no *, no bullets):
+
+WHAT IS INCORRECTLY SPECIFIED:
+(What is wrong, unclear, missing, or — most importantly — inconsistent with the research question / variables. Be specific. If it does not match the research question, say so plainly. If nothing is wrong and it is fully consistent, write: Nothing — this answer is correct and consistent with your research question.)
+
+WHAT IS REQUIRED:
+(What this answer needs to satisfy the IB criteria — describe the TYPE of content needed, not the content itself.)
+
+HINT:
+(One or two guiding questions or pointers that lead the student to work it out themselves. NEVER give or write the correct answer — make the student think.)
+
+Keep each section to 1-3 sentences. If the answer is fully correct and consistent with the research spine, end your whole reply with the exact tag [COMPLETE].`;
+}
+
+// Strict foundation gate: judges the RQ + hypothesis + variables + method as a
+// whole before the student builds the rest of the IA on it. Describes problems
+// only (never rewrites the answers). Returns a PASS/ISSUES verdict.
+function getFoundationVerifyPrompt(subject, spine) {
+  return `You are a strict IB ${subject} Internal Assessment examiner reviewing the FOUNDATION of a student's investigation before they build the rest of the IA on it. If this foundation is flawed, everything built on it will be flawed.
+
+${_spineBlock(spine)}
+
+Judge whether this foundation is sound enough to build a full IA on. Check:
+- Is the research question specific, measurable, and feasible at school level?
+- Do the independent, dependent and controlled variables correctly match the research question?
+- Is the hypothesis grounded in ${subject} theory and consistent with the variables?
+- Is the method actually capable of varying the IV and measuring the DV?
+- Is everything internally consistent, with no mixing of unrelated experiments?
+
+Reply in plain text only (no #, no *, no bullets), in exactly this shape:
+
+VERDICT: PASS   (use PASS only if the foundation is genuinely sound and internally consistent; otherwise use ISSUES)
+
+PROBLEMS:
+(If ISSUES: a numbered list — 1., 2., 3. — of the specific foundational problems, each 1-2 sentences, most serious first. If PASS: write "None — the foundation is sound and internally consistent.")
+
+Describe the problems only. Do NOT rewrite the research question or provide corrected answers — the student must fix these themselves.`;
 }
 
 const { requireStudent, checkDiaryRun, useDiaryRun } = require('../student-auth');
@@ -195,15 +243,33 @@ module.exports = async function iaDiaryRoutes(app) {
   app.post('/ia-question-feedback', RL(40), async (req, reply) => {
     const student = await requireStudent(req, reply, 2);
     if (!student) return;
-    const { subject, section, questionLabel, answer, geminiKey } = req.body || {};
+    const { subject, section, questionLabel, answer, spine, geminiKey } = req.body || {};
     if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
     if (!subject || !questionLabel || !answer) return reply.code(400).send({ error: 'Missing fields' });
     try {
-      const prompt = getQuestionFeedbackPrompt(subject, section || '', questionLabel, answer);
+      const prompt = getQuestionFeedbackPrompt(subject, section || '', questionLabel, answer, spine || {});
       const result = await callGemini(geminiKey, prompt, 1500);
       const text = (result.text || '');
       const complete = /\[COMPLETE\]/i.test(text);
       return reply.send({ text: text.replace(/\[COMPLETE\]/ig, '').trim(), model: result.model, complete });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // POST /api/ia-foundation-verify — strict check of RQ + hypothesis + variables + method
+  app.post('/ia-foundation-verify', RL(20), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, spine, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !spine) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getFoundationVerifyPrompt(subject, spine || {});
+      const result = await callGemini(geminiKey, prompt, 1500);
+      const text = (result.text || '');
+      const pass = /VERDICT:\s*PASS/i.test(text);
+      return reply.send({ text: text.trim(), pass, model: result.model });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }

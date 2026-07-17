@@ -322,9 +322,9 @@ RPF band prediction: (0 / 1–2 / 3–4 — with specific reason)
 
 ---
 
-### Overall Estimated Mark: [XX / 34]
+### Overall Estimated Mark: [XX / 30]
 (Predicted grade: [A / B / C / D / E])
-Note: Criterion D is worth 8 marks. Criterion E is worth 4. Total = 34 marks.
+Note: Criterion A=6, B=6, C=6, D=8 (highest weight), E=4. Total = 30 marks (current EE assessment model).
 
 ### Top 5 Priority Improvements Before Submission
 (Ranked by impact on final mark — most impactful first)
@@ -336,6 +336,73 @@ Note: Criterion D is worth 8 marks. Criterion E is worth 4. Total = 34 marks.
 
 ---
 *This review is AI-assisted and based on IBHighway EE Diary entries. Always verify against the official IB EE Guide 2025 and consult your supervisor before submission.*`;
+}
+
+// ─── NEW (additive) — DIARY-ENGINE ROUTES ────────────────────────────────────
+// Per-question Socratic feedback + strict foundation gate for the config-driven
+// EE diary engine. These do NOT touch the ee-review / ee-generate prompts above.
+// Current EE model: Criterion A Focus & Method /6, B Knowledge & Understanding /6,
+// C Analysis & Line of Argument /6, D Discussion & Evaluation /8, E Reflection /4
+// = 30, best-fit positive marking. Interdisciplinary essays combine a science with
+// a second DP subject under one of five IB thematic frameworks; the framework
+// itself is not graded, but genuine integration of the two disciplines is.
+
+function _eeSpineBlock(spine) {
+  spine = spine || {};
+  var inter = !!spine.interdisciplinary;
+  var b = "THE STUDENT'S EXTENDED ESSAY (their research foundation — every answer must be consistent with this):\n" +
+          "Research Question: " + (spine.rq || '(not stated yet)') + "\n" +
+          "Subject / Discipline: " + (spine.subject || '(not stated yet)');
+  if (inter) {
+    b += "\nApproach: INTERDISCIPLINARY" +
+         "\nSecond Discipline: " + (spine.subject2 || '(not stated yet)') +
+         "\nThematic Framework: " + (spine.framework || '(not chosen yet)');
+  } else {
+    b += "\nApproach: Single-subject";
+  }
+  b += "\nFocus & Method (methodology): " + (spine.methodology || '(not stated yet)') +
+       "\nKnowledge & Literature base: " + (spine.literature || '(not stated yet)');
+  return b;
+}
+
+function getEEQuestionFeedbackPrompt(subject, section, questionLabel, answer, spine) {
+  spine = spine || {};
+  var inter = !!spine.interdisciplinary;
+  var interNote = inter ? ("\nThis is an INTERDISCIPLINARY Extended Essay combining " + subject + " with " +
+    (spine.subject2 || 'a second discipline') + " under the IB thematic framework \"" + (spine.framework || '(framework not chosen yet)') +
+    "\". A distinctive requirement applies: the essay must genuinely INTEGRATE both disciplines — using the concepts, methods and terminology of BOTH — and must justify why an interdisciplinary approach is necessary rather than a single subject. Where the answer should draw on both disciplines but uses only one, that imbalance is the most important thing to raise. The choice of framework itself is not graded, but integration of the two subjects is central to Criteria A, B and C.") : "";
+  return "You are an experienced IB Extended Essay examiner giving feedback on ONE answer in a student's EE, applying the current EE assessment criteria (Criterion A Focus and Method /6, B Knowledge and Understanding /6, C Analysis and Line of Argument /6, D Discussion and Evaluation /8, E Reflection /4; total 30, best-fit positive marking).\n\n" +
+    _eeSpineBlock(spine) + "\n" + interNote + "\n\n" +
+    "Section: " + section + "\n" +
+    "Question: " + questionLabel + "\n" +
+    "Student's answer: " + answer + "\n\n" +
+    "FIRST, silently check coherence: does this answer fit the research question, discipline" + (inter ? "s" : "") + " and method above? A common serious mistake is an answer that drifts from the locked research question, is merely descriptive/narrative where analysis is required, or " + (inter ? "leans on only one of the two disciplines when both are needed" : "strays outside the subject") + ". If the answer is inconsistent with the foundation above, that inconsistency is the MOST important thing to raise.\n\n" +
+    "Then reply in EXACTLY these three labelled sections, in this order, plain text only (no #, no *, no bullets):\n\n" +
+    "WHAT IS INCORRECTLY SPECIFIED:\n(What is wrong, unclear, missing, or — most importantly — inconsistent with the research question / discipline / method. Be specific. If nothing is wrong and it is fully consistent, write: Nothing — this answer is correct and consistent with your research question.)\n\n" +
+    "WHAT IS REQUIRED:\n(What this answer needs to satisfy the relevant EE criterion — describe the TYPE of content or analytical move needed, not the content itself.)\n\n" +
+    "HINT:\n(One or two guiding questions or pointers that lead the student to work it out themselves. NEVER give or write the correct answer — make the student think.)\n\n" +
+    "If the answer is not a genuine attempt — random characters, filler, a single word, or clearly off-topic — say so plainly in WHAT IS INCORRECTLY SPECIFIED and do NOT invent praise, analysis, or a real answer; simply tell the student to write a real response to the question.\n\n" +
+    "Keep each section to 1-3 sentences. If the answer is fully correct and consistent with the foundation, end your whole reply with the exact tag [COMPLETE].";
+}
+
+function getEEFoundationVerifyPrompt(subject, spine) {
+  spine = spine || {};
+  var inter = !!spine.interdisciplinary;
+  var interCheck = inter ? ("\n- Is the interdisciplinary pairing (" + subject + " + " + (spine.subject2 || 'second discipline') +
+    ") genuinely justified — does the question actually NEED both disciplines, and is the chosen thematic framework \"" + (spine.framework || '(none)') +
+    "\" appropriate?\n- Can BOTH disciplines' methods realistically be applied to answer this question?") : "";
+  return "You are a strict IB Extended Essay examiner reviewing the FOUNDATION of a student's essay before they build the rest on it (Criterion A Focus and Method, and the knowledge base for Criterion B). If this foundation is flawed, everything built on it will be flawed.\n\n" +
+    _eeSpineBlock(spine) + "\n\n" +
+    "Judge whether this foundation is sound enough to build a full 4,000-word Extended Essay on. Check:\n" +
+    "- Is the research question clear, focused, arguable, and answerable within 4,000 words at school level (not too broad, not merely descriptive)?\n" +
+    "- Is the discipline appropriate, and does the RQ sit genuinely within it?\n" +
+    "- Is the Focus & Method (approach/methodology) explicitly suitable for the question and feasible?\n" +
+    "- Is there a real knowledge/literature base to ground the essay in scholarly discourse?\n" +
+    "- Is everything internally consistent, with no drift between RQ, discipline and method?" + interCheck + "\n\n" +
+    "Reply in plain text only (no #, no *, no bullets), in exactly this shape:\n\n" +
+    "VERDICT: PASS   (use PASS only if the foundation is genuinely sound and internally consistent; otherwise use ISSUES)\n\n" +
+    "PROBLEMS:\n(If ISSUES: a numbered list — 1., 2., 3. — of the specific foundational problems, each 1-2 sentences, most serious first. If PASS: write \"None — the foundation is sound and internally consistent.\")\n\n" +
+    "Describe the problems only. Do NOT rewrite the research question or provide corrected answers — the student must fix these themselves.";
 }
 
 // ─── FASTIFY ROUTE REGISTRATION ──────────────────────────────────────────────
@@ -385,6 +452,43 @@ module.exports = async function eeDiaryRoutes(app) {
       const result = await callGemini(geminiKey, prompt, 3000);
       const run = await useDiaryRun(student.code);
       return reply.send({ ...result, runMessage: run.message || run.error || null });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+
+  // POST /api/ee-question-feedback — Socratic feedback on a SINGLE answer (diary engine)
+  app.post('/ee-question-feedback', RL(40), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, section, questionLabel, answer, spine, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !questionLabel || !answer) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getEEQuestionFeedbackPrompt(subject, section || '', questionLabel, answer, spine || {});
+      const result = await callGemini(geminiKey, prompt, 1500);
+      const text = (result.text || '');
+      const complete = /\[COMPLETE\]/i.test(text);
+      return reply.send({ text: text.replace(/\[COMPLETE\]/ig, '').trim(), model: result.model, complete });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // POST /api/ee-foundation-verify — strict check of RQ + discipline(s) + method + literature base
+  app.post('/ee-foundation-verify', RL(20), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, spine, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject || !spine) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getEEFoundationVerifyPrompt(subject, spine || {});
+      const result = await callGemini(geminiKey, prompt, 1500);
+      const text = (result.text || '');
+      const pass = /VERDICT:\s*PASS/i.test(text);
+      return reply.send({ text: text.trim(), pass, model: result.model });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }

@@ -369,7 +369,7 @@ function getEEQuestionFeedbackPrompt(subject, section, questionLabel, answer, sp
   spine = spine || {};
   var inter = !!spine.interdisciplinary;
   var interNote = inter ? ("\nThis is an INTERDISCIPLINARY Extended Essay combining " + subject + " with " +
-    (spine.subject2 || 'a second discipline') + " under the IB thematic framework \"" + (spine.framework || '(framework not chosen yet)') +
+    (spine.subject2 || 'a second discipline') + " under one of the five IB interdisciplinary frameworks (Power, Equality, Justice; Culture, Identity, Expression; Movement, Time, Space; Evidence, Measurement, Innovation; Sustainability, Development, Change) \u2014 NOT the older 'World Studies' global themes. Their chosen framework: \"" + (spine.framework || '(framework not chosen yet)') +
     "\". A distinctive requirement applies: the essay must genuinely INTEGRATE both disciplines — using the concepts, methods and terminology of BOTH — and must justify why an interdisciplinary approach is necessary rather than a single subject. Where the answer should draw on both disciplines but uses only one, that imbalance is the most important thing to raise. The choice of framework itself is not graded, but integration of the two subjects is central to Criteria A, B and C.") : "";
   return "You are an experienced IB Extended Essay examiner giving feedback on ONE answer in a student's EE, applying the current EE assessment criteria (Criterion A Focus and Method /6, B Knowledge and Understanding /6, C Analysis and Line of Argument /6, D Discussion and Evaluation /8, E Reflection /4; total 30, best-fit positive marking).\n\n" +
     _eeSpineBlock(spine) + "\n" + interNote + "\n\n" +
@@ -403,6 +403,33 @@ function getEEFoundationVerifyPrompt(subject, spine) {
     "VERDICT: PASS   (use PASS only if the foundation is genuinely sound and internally consistent; otherwise use ISSUES)\n\n" +
     "PROBLEMS:\n(If ISSUES: a numbered list — 1., 2., 3. — of the specific foundational problems, each 1-2 sentences, most serious first. If PASS: write \"None — the foundation is sound and internally consistent.\")\n\n" +
     "Describe the problems only. Do NOT rewrite the research question or provide corrected answers — the student must fix these themselves.";
+}
+
+function getEEBrainstormPrompt(subject, interest, secondSubject, framework) {
+  return "You are an encouraging IB Extended Essay supervisor helping a student brainstorm an INTERDISCIPLINARY EE that pairs " + subject + " (their science) with a SECOND Diploma Programme subject.\n\n" +
+    "The IB interdisciplinary EE registers under ONE of five thematic frameworks (these, NOT the older 'World Studies' global themes): 1) Power, Equality, Justice; 2) Culture, Identity, Expression; 3) Movement, Time, Space; 4) Evidence, Measurement, Innovation; 5) Sustainability, Development, Change. The framework itself is not graded, but genuine INTEGRATION of the two subjects is central to Criteria A, B and C.\n\n" +
+    "The student's stated interest: " + (interest || '(not stated yet)') + "\n" +
+    (secondSubject ? "Second subject they are considering: " + secondSubject + "\n" : "") +
+    (framework ? "Framework they picked: " + framework + "\n" : "") + "\n" +
+    "Help them with HINTS (guide them, do NOT decide for them). Reply in plain text (no #, no *, no bullets) in these labelled parts:\n\n" +
+    "POSSIBLE SUBJECT PAIRINGS:\n(Suggest 2-3 second DP subjects that pair naturally with " + subject + " for this interest, each with one sentence on what that discipline would add. Where it fits, include a second science — e.g. Physics with Biology, or Chemistry with Biology.)\n\n" +
+    "BEST-FIT FRAMEWORK:\n(Name the one or two of the five frameworks that suit this interest, and why in one sentence each.)\n\n" +
+    "TOPIC ANGLES TO EXPLORE:\n(Two or three example directions phrased as questions the student could pursue — hints, not a finished research question. Each must clearly need BOTH disciplines.)\n\n" +
+    "QUESTIONS TO ASK YOURSELF:\n(Pose the four IB workshop questions adapted to their interest: what aspect really interests you; why is an interdisciplinary approach necessary; which framework fits; which two DP subjects integrate logically.)\n\n" +
+    "Keep it concise and encouraging. Do NOT write a final research question for them — the choice stays with the student.";
+}
+
+function getEEBrainstormChatPrompt(subject, framework, history, turnCount) {
+  var proposeRQ = (turnCount || 0) >= 10;
+  var transcript = (history || []).map(function(m){ return (m.role === 'student' ? 'Student: ' : 'Bot: ') + m.text; }).join('\n');
+  return "You are a warm, encouraging brainstorming bot helping an IB student develop an INTERDISCIPLINARY Extended Essay that pairs " + subject + " (their science) with a SECOND Diploma Programme subject.\n" +
+    (framework ? "They are exploring the framework: " + framework + ".\n" : "") +
+    "The five IB interdisciplinary frameworks are: Power, Equality, Justice; Culture, Identity, Expression; Movement, Time, Space; Evidence, Measurement, Innovation; Sustainability, Development, Change (these five ONLY — never the old 'World Studies' global themes).\n" +
+    "Ask SHORT, focused questions ONE AT A TIME to draw out, over the course of the chat: what genuinely interests them; which second DP subject pairs well and why; which of the five frameworks fits; why an interdisciplinary approach is genuinely necessary (not just two subjects they like); feasibility and available sources or methods; and finally a specific, narrow angle. Adapt each question to their previous answer. Ask only ONE question per reply. Keep each reply to 2-4 sentences, warm and plain — no markdown, no bullet points, no headings.\n" +
+    (proposeRQ
+      ? "You have now asked enough questions. Based on everything the student has said, propose ONE clear, focused, arguable interdisciplinary research question suitable for an Extended Essay that genuinely integrates " + subject + " with the second subject. Start your reply with 'RESEARCH QUESTION:' followed by the question on the same line. Then, on new lines, name the two subjects and the chosen framework, and add one sentence of encouragement."
+      : "Do not propose a final research question yet — just ask the next single most useful question based on what the student has said so far.") +
+    "\n\nConversation so far:\n" + (transcript || '(none yet — open with a warm greeting and your first question)') + "\n\nBot:";
 }
 
 // ─── FASTIFY ROUTE REGISTRATION ──────────────────────────────────────────────
@@ -489,6 +516,43 @@ module.exports = async function eeDiaryRoutes(app) {
       const text = (result.text || '');
       const pass = /VERDICT:\s*PASS/i.test(text);
       return reply.send({ text: text.trim(), pass, model: result.model });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+
+  // POST /api/ee-interdisciplinary-brainstorm — hints for choosing a 2nd subject + topic
+  app.post('/ee-interdisciplinary-brainstorm', RL(30), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, interest, secondSubject, framework, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject) return reply.code(400).send({ error: 'Missing subject' });
+    try {
+      const prompt = getEEBrainstormPrompt(subject, interest || '', secondSubject || '', framework || '');
+      const result = await callGemini(geminiKey, prompt, 1500);
+      return reply.send({ text: (result.text || '').trim(), model: result.model });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+
+  // POST /api/ee-brainstorm-chat — multi-turn interdisciplinary brainstorming bot.
+  // Asks up to 10 adaptive questions; from turn 10 it proposes the research question.
+  app.post('/ee-brainstorm-chat', RL(40), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { subject, framework, conversationHistory, turnCount, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!subject) return reply.code(400).send({ error: 'Missing subject' });
+    try {
+      const prompt = getEEBrainstormChatPrompt(subject, framework || '', conversationHistory || [], turnCount || 0);
+      const result = await callGemini(geminiKey, prompt, 1200);
+      const text = (result.text || '').trim();
+      const isRQ = /RESEARCH QUESTION:/i.test(text);
+      return reply.send({ text, isRQ, model: result.model });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }

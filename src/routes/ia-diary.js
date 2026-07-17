@@ -206,6 +206,8 @@ WHAT IS REQUIRED:
 HINT:
 (One or two guiding questions or pointers that lead the student to work it out themselves. NEVER give or write the correct answer — make the student think.)
 
+If the answer is not a genuine attempt \u2014 random characters, filler, a single word, or clearly off-topic \u2014 say so plainly in WHAT IS INCORRECTLY SPECIFIED and do NOT invent praise, analysis, or a real answer; simply tell the student to write a real response to the question.
+
 Keep each section to 1-3 sentences. If the answer is fully correct and consistent with the research spine, end your whole reply with the exact tag [COMPLETE].`;
 }
 

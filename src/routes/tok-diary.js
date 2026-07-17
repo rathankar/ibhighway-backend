@@ -338,6 +338,77 @@ Cross-AOK comparison: (Has the student genuinely compared how the two AOKs illum
 
 // ─── FASTIFY ROUTE REGISTRATION ──────────────────────────────────────────────
 
+// ─── NEW (additive) — DIARY-ENGINE ROUTES (Essay + Exhibition) ────────────────
+// Framework-anchored per-answer Socratic feedback + foundation gate for the
+// config-driven TOK diary engine. These do NOT touch tok-review / tok-generate.
+// Correct assessment: TOK Essay is a SINGLE global instrument out of 10 (max 1600
+// words); TOK Exhibition is a SINGLE global instrument out of 10 (three objects +
+// one IB IA prompt, commentary max 950 words). NOT an A/10 + B/20 split.
+// The four Knowledge Framework pillars (Scope; Perspectives; Methods & Tools;
+// Ethics) and the 12 TOK concepts (certainty, culture, evidence, explanation,
+// interpretation, justification, objectivity, perspective, power, responsibility,
+// truth, values) are the analytical spine.
+
+function _tokSpine(spine){
+  spine = spine || {};
+  var t = (spine.track||'essay');
+  if(t==='exhibition'){
+    return "THE STUDENT'S TOK EXHIBITION (every answer must be consistent with this):\n" +
+      "IB IA prompt: " + (spine.prompt || '(not chosen yet)') + "\n" +
+      "Subject group / context: " + (spine.subjectGroup || '(not stated yet)') + "\n" +
+      "Object 1: " + (spine.object1 || '(not chosen yet)') + "\n" +
+      "Object 2: " + (spine.object2 || '(not chosen yet)') + "\n" +
+      "Object 3: " + (spine.object3 || '(not chosen yet)') + "\n" +
+      "TOK concepts in play: " + (spine.concepts || '(none selected)');
+  }
+  return "THE STUDENT'S TOK ESSAY (every answer must be consistent with this):\n" +
+    "Prescribed title (as set, unaltered): " + (spine.title || '(not chosen yet)') + "\n" +
+    "Knowledge question(s): " + (spine.kq || '(not stated yet)') + "\n" +
+    "Areas of knowledge: " + (spine.aoks || '(not chosen yet)') + "\n" +
+    "Subject group / context: " + (spine.subjectGroup || '(not stated yet)') + "\n" +
+    "TOK concepts in play: " + (spine.concepts || '(none selected)');
+}
+
+function getTokQuestionFeedbackPrompt(section, questionLabel, answer, spine){
+  spine = spine || {};
+  var exhibition = (spine.track==='exhibition');
+  var instrument = exhibition
+    ? "The single TOK Exhibition assessment question is: \"Does the exhibition successfully show how TOK manifests in the world around us?\" (marked out of 10, best-fit). A strong exhibition uses THREE specific real-world objects (each with a clear real-world provenance — a particular thing at a particular time/place, not a generic type), each explicitly justified against the ONE chosen IB IA prompt, with links to TOK concepts. The commentary is max 950 words."
+    : "The single TOK Essay assessment question is: \"Does the student provide a clear, coherent and critical exploration of the essay title?\" (marked out of 10, best-fit). A strong essay keeps sustained focus on the prescribed title (as set, unaltered); links effectively to the areas of knowledge using their methods and nature (second-order, not first-order facts); supports points with specific, relevant real-life examples; draws out implications (‘so what for knowledge?’); and evaluates genuinely different perspectives. Max 1600 words.";
+  return "You are an experienced IB Theory of Knowledge examiner giving feedback on ONE answer in a student's TOK " + (exhibition?"Exhibition":"Essay") + ".\n\n" +
+    instrument + "\n\n" +
+    _tokSpine(spine) + "\n\n" +
+    "Section: " + section + "\n" +
+    "Question: " + questionLabel + "\n" +
+    "Student's answer: " + answer + "\n\n" +
+    "FIRST, silently check coherence against the spine above. Common serious mistakes: " +
+    (exhibition
+      ? "an object that is a generic type rather than a specific real-world object; an object or commentary that does not clearly connect to the ONE chosen IB IA prompt; description of objects without saying what they reveal about knowledge."
+      : "answering a different question from the title as set, or altering the title; treating the question as first-order (facts about the world) rather than second-order (about how knowledge is produced, justified or evaluated); examples that do not fit or are not specific; missing evaluation of different perspectives.") +
+    " If the answer is inconsistent with the spine, that is the MOST important thing to raise.\n\n" +
+    "Then reply in EXACTLY these three labelled sections, in this order, plain text only (no #, no *, no bullets):\n\n" +
+    "WHAT IS INCORRECTLY SPECIFIED:\n(What is wrong, unclear, missing, or — most importantly — inconsistent with the title/prompt, the knowledge question, or the framework. Be specific. If nothing is wrong and it is fully consistent, write: Nothing — this answer is correct and consistent.)\n\n" +
+    "WHAT IS REQUIRED:\n(What this answer needs to satisfy the TOK assessment — describe the TYPE of thinking or move needed, e.g. make the question second-order, add a specific real-life example, evaluate a competing perspective, tie the object to the prompt — not the content itself.)\n\n" +
+    "HINT:\n(One or two guiding questions that lead the student to work it out themselves. NEVER write the answer, the knowledge question, or the commentary for them.)\n\n" +
+    "If the answer is not a genuine attempt — random characters, filler, a single word, or clearly off-topic — say so plainly in WHAT IS INCORRECTLY SPECIFIED and do NOT invent praise or content; simply tell the student to write a real response.\n\n" +
+    "Keep each section to 1-3 sentences. If the answer is fully correct and consistent, end your whole reply with the exact tag [COMPLETE].";
+}
+
+function getTokFoundationVerifyPrompt(spine){
+  spine = spine || {};
+  var exhibition = (spine.track==='exhibition');
+  var checks = exhibition
+    ? "- Is exactly ONE IB IA prompt chosen, and used as set (not reworded)?\n- Are there THREE distinct objects, each a SPECIFIC real-world object (a particular thing with a real provenance), not a generic type?\n- Does each object plausibly connect to the chosen prompt?\n- Is the set coherent — do the three objects together show how TOK manifests in the world?"
+    : "- Is the prescribed title used EXACTLY as set (not altered)?\n- Is the knowledge question genuinely second-order (about how knowledge is produced/justified/evaluated), open, and contestable — not a first-order factual question?\n- Are the areas of knowledge appropriate to the title and specified?\n- Is everything internally consistent, with the KQ and AOKs actually serving the title?";
+  return "You are a strict IB Theory of Knowledge examiner reviewing the FOUNDATION of a student's TOK " + (exhibition?"Exhibition":"Essay") + " before they build the rest on it. If this foundation is flawed, everything built on it will be flawed.\n\n" +
+    _tokSpine(spine) + "\n\n" +
+    "Judge whether this foundation is sound. Check:\n" + checks + "\n\n" +
+    "Reply in plain text only (no #, no *, no bullets), in exactly this shape:\n\n" +
+    "VERDICT: PASS   (use PASS only if the foundation is genuinely sound and internally consistent; otherwise use ISSUES)\n\n" +
+    "PROBLEMS:\n(If ISSUES: a numbered list — 1., 2., 3. — of the specific foundational problems, each 1-2 sentences, most serious first. If PASS: write \"None — the foundation is sound and internally consistent.\")\n\n" +
+    "Describe the problems only. Do NOT rewrite the title, knowledge question, prompt or objects for the student.";
+}
+
 const { requireStudent, checkDiaryRun, useDiaryRun } = require('../student-auth');
 const RL = (max) => ({ config: { rateLimit: { max, timeWindow: '1 minute' } } });
 
@@ -381,6 +452,43 @@ module.exports = async function tokDiaryRoutes(app) {
       const result = await callGemini(geminiKey, prompt, 3000);
       const run = await useDiaryRun(student.code);
       return reply.send({ ...result, runMessage: run.message || run.error || null });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+
+  // POST /api/tok-question-feedback — Socratic feedback on a SINGLE answer (engine)
+  app.post('/tok-question-feedback', RL(40), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { section, questionLabel, answer, spine, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!questionLabel || !answer) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getTokQuestionFeedbackPrompt(section || '', questionLabel, answer, spine || {});
+      const result = await callGemini(geminiKey, prompt, 1500);
+      const text = (result.text || '');
+      const complete = /\[COMPLETE\]/i.test(text);
+      return reply.send({ text: text.replace(/\[COMPLETE\]/ig, '').trim(), model: result.model, complete });
+    } catch (e) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // POST /api/tok-foundation-verify — strict check of essay (title+KQ+AOKs) or exhibition (prompt+objects)
+  app.post('/tok-foundation-verify', RL(20), async (req, reply) => {
+    const student = await requireStudent(req, reply, 2);
+    if (!student) return;
+    const { spine, geminiKey } = req.body || {};
+    if (!geminiKey) return reply.code(400).send({ error: 'No Gemini key provided' });
+    if (!spine) return reply.code(400).send({ error: 'Missing fields' });
+    try {
+      const prompt = getTokFoundationVerifyPrompt(spine || {});
+      const result = await callGemini(geminiKey, prompt, 1500);
+      const text = (result.text || '');
+      const pass = /VERDICT:\s*PASS/i.test(text);
+      return reply.send({ text: text.trim(), pass, model: result.model });
     } catch (e) {
       return reply.code(500).send({ error: e.message });
     }

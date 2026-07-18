@@ -251,17 +251,32 @@ Respond ONLY as valid JSON: { "word": string, "ipa": string, "syllables": string
   fastify.post('/express/evaluate', async (request, reply) => {
     const uid = getUser(request, reply); if (uid == null) return;
     const geminiKey = request.headers['x-gemini-key'] ;
-    const { raw_input } = request.body || {};
+    const { raw_input, language } = request.body || {};
     if (!raw_input) return reply.code(400).send({ detail: 'raw_input required' });
-    const prompt = `A Tamil-speaking school student wants to ask their teacher a question, expressed informally in Tanglish.
+
+    // Two languages at a time: English + ONE student-chosen language. The name is
+    // interpolated into the prompt, so it is validated against a fixed allowlist
+    // rather than trusted from the client.
+    const ALLOWED_LANGS = [
+      'Tamil','Hindi','Telugu','Kannada','Malayalam','Marathi','Bengali','Gujarati','Punjabi','Urdu','Odia','Assamese',
+      'Spanish','French','German','Mandarin','Japanese','Arabic','Portuguese','Italian','Russian','Korean','Dutch',
+      'Indonesian','Thai','Turkish','Vietnamese','Swedish','Norwegian','Danish','Polish','Greek','Hebrew','Czech','Hungarian','Finnish'
+    ];
+    const lang = ALLOWED_LANGS.includes(language) ? language : 'Tamil';
+
+    const prompt = `A ${lang}-speaking school student wants to ask their teacher a question. They have written it informally, possibly mixing ${lang} and English.
 Input: "${raw_input}"
-Respond ONLY as valid JSON: { "clean_question": string, "tamil_check": string }
-clean_question = one polite English question they can say to their teacher.
-tamil_check = one Tamil sentence confirming what the question means.`;
+Respond ONLY as valid JSON: { "clean_question": string, "native_check": string }
+clean_question = one polite, clear English question they can say to their teacher.
+native_check = the same question written in ${lang}, so the student can confirm it means what they intended.`;
     try {
       const { text } = await callGemini(prompt, geminiKey);
       const parsed = parseJson(text);
-      if (parsed) return parsed;
+      if (parsed) {
+        const check = parsed.native_check || parsed.tamil_check || '';
+        // tamil_check kept as an alias so any older cached client still works
+        return { clean_question: parsed.clean_question || '', native_check: check, tamil_check: check, language: lang };
+      }
       return reply.code(500).send({ detail: 'Could not parse response' });
     } catch (_) {
       return reply.code(500).send({ detail: 'Gemini error' });

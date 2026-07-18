@@ -134,7 +134,9 @@ async function callGemini(geminiKey, sys, history) {
           parts: [{ text: m.content }]
         })),
         systemInstruction: { parts: [{ text: sys }] },
-        generationConfig: { maxOutputTokens: 600, temperature: 0.7 }
+        // 600 was too tight: the newer "thinking" models spend part of the output
+        // budget on internal reasoning, so replies were being cut mid-sentence.
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
       };
       const res = await fetch(endpoint, {
         method: 'POST',

@@ -4,14 +4,16 @@
 // responses) and the student's own Gemini key. The system prompt is attached
 // server-side via Gemini's systemInstruction field.
 
+// Cost-first fallback order: try the cheap 2.5 tier first and only climb to the
+// pricier 3.x models if the student's key cannot serve 2.5 at all.
 const MODELS = [
-  { model: 'gemini-3.5-flash',      api: 'v1beta' },
-  { model: 'gemini-3.1-pro',        api: 'v1beta' },
-  { model: 'gemini-3.1-flash',      api: 'v1beta' },
-  { model: 'gemini-3.1-flash-lite', api: 'v1beta' },
-  { model: 'gemini-2.5-pro',        api: 'v1beta' },
   { model: 'gemini-2.5-flash',      api: 'v1beta' },
   { model: 'gemini-2.5-flash-lite', api: 'v1beta' },
+  { model: 'gemini-2.5-pro',        api: 'v1beta' },
+  { model: 'gemini-3.1-flash-lite', api: 'v1beta' },
+  { model: 'gemini-3.1-flash',      api: 'v1beta' },
+  { model: 'gemini-3.1-pro',        api: 'v1beta' },
+  { model: 'gemini-3.5-flash',      api: 'v1beta' },
 ];
 
 const SYSTEM_PROMPT = `You are an IB tutor using pure Socratic questioning to help a student discover whether their belief is correct or a misconception.

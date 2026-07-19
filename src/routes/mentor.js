@@ -2,14 +2,17 @@
 // POST /api/mentor  — proxy Gemini call with server-side system prompts
 
 // Agreed fallback order (2.5–3.5 family only; dead 1.5/2.0 models removed).
+// Cost-first order: the mentor is a long multi-turn chat, so it starts on the
+// cheap 2.5 tier and only climbs to the 3.x models if the student's key cannot
+// serve 2.5 at all. (Previously started on 3.5-flash, which was expensive.)
 const MODELS = [
-  'gemini-3.5-flash',
-  'gemini-3.1-pro',
-  'gemini-3.1-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-flash',
+  'gemini-3.1-pro',
+  'gemini-3.5-flash',
 ];
 
 // ── System prompts (server-side only) ──

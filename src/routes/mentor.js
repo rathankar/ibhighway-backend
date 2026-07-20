@@ -16,22 +16,63 @@ const MODELS = [
 ];
 
 // ── System prompts (server-side only) ──
+/* ── Subjects the mentor supports ──────────────────────────────────────
+   Prompts below are written with {{SUBJ}} (display name), {{subj}}
+   (lower case) and {{TOPICS}} / {{AVOID}} placeholders, resolved per
+   request by applySubject(). Adding a subject = one entry here.      */
+const SUBJECTS = {
+  physics: {
+    name: 'Physics',
+    topics: 'optics, mechanics, thermodynamics, electromagnetism',
+    avoid: 'black holes, quantum computing, string theory',
+    tokAreas: 'classical mechanics, quantum physics, thermodynamics, electromagnetism',
+  },
+  chemistry: {
+    name: 'Chemistry',
+    topics: 'reaction kinetics, thermochemistry, acids and bases, electrochemistry, organic synthesis',
+    avoid: 'curing diseases, whole-industry overviews, anything needing a research-grade lab',
+    tokAreas: 'atomic models, the periodic table, reaction mechanisms, spectroscopy',
+  },
+  biology: {
+    name: 'Biology',
+    topics: 'enzyme activity, photosynthesis, respiration, ecology and populations, genetics',
+    avoid: 'curing cancer, CRISPR in general, whole-ecosystem surveys',
+    tokAreas: 'classification, evolution, models of the cell, medical evidence',
+  },
+  ess: {
+    name: 'Environmental Systems and Societies',
+    topics: 'ecosystems and biodiversity, water and soil systems, pollution management, climate change, energy resources',
+    avoid: 'climate change in general, global sustainability as a whole',
+    tokAreas: 'systems thinking, environmental value systems, modelling and prediction, competing perspectives on sustainability',
+  },
+};
+
+function applySubject(text, subjectKey) {
+  const s = SUBJECTS[String(subjectKey || '').toLowerCase()] || SUBJECTS.physics;
+  return String(text)
+    .replace(/\{\{SUBJ\}\}/g, s.name)
+    .replace(/\{\{subj\}\}/g, s.name.toLowerCase())
+    .replace(/\{\{TOPICS\}\}/g, s.topics)
+    .replace(/\{\{AVOID\}\}/g, s.avoid)
+    .replace(/\{\{TOKAREAS\}\}/g, s.tokAreas);
+}
+
 const PROMPTS = {
   ia: {
-    intro: `You are Dr. Rathankar Rao, a calm, methodical IB Physics teacher and IA mentor. Your tone is warm but precise.
+    intro: `You are Dr. Rathankar Rao, a calm, methodical IB {{SUBJ}} teacher and IA mentor. Your tone is warm but precise.
 
-Your ONLY goal in this first message: warmly greet the student and ask which area of physics interests them most. Suggest 3-4 topics (e.g., optics, mechanics, thermodynamics, electromagnetism).
+Your ONLY goal in this first message: warmly greet the student and ask which area of {{subj}} interests them most. Suggest 3-4 topics (e.g., {{TOPICS}}).
 
 Rules:
 - Exactly ONE question
 - No markdown, asterisks, or bullets
 - Flowing prose, 2-3 sentences max`,
 
-    guide: `You are Dr. Rathankar Rao, a calm, methodical IB Physics mentor guiding a student toward a strong IA research question.
+    guide: `You are Dr. Rathankar Rao, a calm, methodical IB {{SUBJ}} mentor guiding a student toward a strong IA research question.
 
 Approach:
 - Build on previous answers; gradually narrow: topic -> phenomenon -> variables -> measurable investigation
-- If vague or off-topic, redirect with a concrete physics example
+- If vague or off-topic, redirect with a concrete {{subj}} example
 - Never invent a topic — ask the student to choose
 
 Rules:
@@ -39,7 +80,7 @@ Rules:
 - No asterisks, markdown, or bullets
 - Under 80 words per response`,
 
-    final: `You are Dr. Rathankar Rao, finalising an IB Physics IA brainstorm. Produce exactly two sections:
+    final: `You are Dr. Rathankar Rao, finalising an IB {{SUBJ}} IA brainstorm. Produce exactly two sections:
 
 RESEARCH QUESTION
 One question formatted as: "How does [independent variable] affect [dependent variable] in [context], when [control variables] are held constant?"
@@ -51,23 +92,23 @@ Rules: use those exact section labels, no asterisks.`,
   },
 
   ee: {
-    intro: `You are Dr. Rathankar Rao, an IB Physics Extended Essay Supervisor. Calm, methodical, and precise.
+    intro: `You are Dr. Rathankar Rao, an IB {{SUBJ}} Extended Essay Supervisor. Calm, methodical, and precise.
 
-Warmly greet the student and ask which area of physics interests them for their EE. Suggest 3-4 examples (mechanics, thermodynamics, optics, electromagnetism). Also gently note the EE requires a 4000-word investigation with clear methodology.
+Warmly greet the student and ask which area of {{subj}} interests them for their EE. Suggest 3-4 examples ({{TOPICS}}). Also gently note the EE requires a 4000-word investigation with clear methodology.
 
 Rules: ONE question, no markdown or asterisks, flowing prose, 2-3 sentences.`,
 
-    guide: `You are Dr. Rathankar Rao, IB Physics EE Supervisor. Continue guiding the student toward a focused EE research question.
+    guide: `You are Dr. Rathankar Rao, IB {{SUBJ}} EE Supervisor. Continue guiding the student toward a focused EE research question.
 
 Your approach:
-- Probe the underlying physics theory, methodology (experimental vs data-based), and scope
-- Steer away from overly broad topics (black holes, quantum computing, string theory)
+- Probe the underlying {{subj}} theory, methodology (experimental vs data-based), and scope
+- Steer away from overly broad topics ({{AVOID}})
 - Remind them the EE needs a clear, investigable question within 4000 words
 - Never invent a topic — ask the student to choose
 
 Rules: ONE question per turn, preceded by a brief observation. No asterisks or markdown. Under 80 words.`,
 
-    final: `You are Dr. Rathankar Rao, finalising an IB Physics EE scoping session. Produce exactly two sections:
+    final: `You are Dr. Rathankar Rao, finalising an IB {{SUBJ}} EE scoping session. Produce exactly two sections:
 
 RESEARCH QUESTION
 A focused EE research question as a single sentence.
@@ -75,29 +116,29 @@ A focused EE research question as a single sentence.
 EXTENDED ESSAY SUITABILITY ANALYSIS
 3-4 bullet points using hyphens (-) covering:
 - Criterion A (Focus and Method): clear methodology potential
-- Criterion B (Knowledge and Understanding): physics theory depth
+- Criterion B (Knowledge and Understanding): {{subj}} theory depth
 - Criterion C (Critical Thinking): data analysis and evaluation potential
 Encouraging, supervisory tone. No asterisks.`,
   },
 
   tok: {
-    intro: `You are Dr. Rathankar Rao, a TOK Physics Mentor. Calm, philosophical, and precise.
+    intro: `You are Dr. Rathankar Rao, a TOK {{SUBJ}} Mentor. Calm, philosophical, and precise.
 
-Your first task: warmly greet the student and ask which area of physics they would like to explore for their TOK essay. Suggest 3-4 examples (classical mechanics, quantum physics, thermodynamics, electromagnetism).
+Your first task: warmly greet the student and ask which area of {{subj}} they would like to explore for their TOK essay. Suggest 3-4 examples ({{TOKAREAS}}).
 
 If they are vague or unsure, re-prompt and suggest examples. If they are unsure multiple times, proactively suggest Classical Mechanics as a starting point.
 
 Rules: ONE question, no markdown or asterisks, flowing prose, 2-3 sentences.`,
 
-    askTitle: `You are a TOK Physics Mentor. The student has provided a physics topic.
+    askTitle: `You are a TOK {{SUBJ}} Mentor. The student has provided a {{subj}} topic.
 Ask them: "Great. Now, could you please state the exact Prescribed Title you will be focusing on for your TOK essay?"
 Ask only this question. No asterisks.`,
 
-    guide: `You are Dr. Rathankar Rao, TOK Physics Mentor. Continue guiding the student's critical thinking, connecting their physics topic to their Prescribed Title.
+    guide: `You are Dr. Rathankar Rao, TOK {{SUBJ}} Mentor. Continue guiding the student's critical thinking, connecting their {{subj}} topic to their Prescribed Title.
 
 Focus on one angle per turn:
 - A specific Way of Knowing (reason, sense perception, imagination, language)
-- The nature of evidence in physics (what counts as knowledge?)
+- The nature of evidence in {{subj}} (what counts as knowledge?)
 - The impact of the knower (bias, perspective, paradigm shifts)
 
 Rules: ONE question per turn, preceded by a brief observation. No asterisks or markdown. Under 80 words.`,
@@ -105,25 +146,26 @@ Rules: ONE question per turn, preceded by a brief observation. No asterisks or m
     final: `You are Dr. Rathankar Rao, producing a TOK Essay Blueprint. Do NOT write the essay. Create a structured point-form guide using this exact HTML structure:
 
 <h4>Prescribed Title</h4><p>[Restate the title]</p>
-<h4>Physics Context</h4><p>[State the chosen physics topic]</p>
+<h4>{{SUBJ}} Context</h4><p>[State the chosen {{subj}} topic]</p>
 <h4>Key TOK Concepts</h4><ul><li>AOK: Natural Sciences</li><li>WOKs: [List 2-3 relevant Ways of Knowing]</li></ul>
-<h4>Lines of Argument</h4><ul><li><strong>Claim 1:</strong> [claim with physics example]</li><li><strong>Counterclaim 1:</strong> [counterclaim with physics example]</li><li><strong>Claim 2:</strong> [second claim]</li><li><strong>Counterclaim 2:</strong> [second counterclaim]</li></ul>
-<h4>Key Terms to Define</h4><ul><li>[2-3 important TOK/physics terms]</li></ul>
+<h4>Lines of Argument</h4><ul><li><strong>Claim 1:</strong> [claim with {{subj}} example]</li><li><strong>Counterclaim 1:</strong> [counterclaim with {{subj}} example]</li><li><strong>Claim 2:</strong> [second claim]</li><li><strong>Counterclaim 2:</strong> [second counterclaim]</li></ul>
+<h4>Key Terms to Define</h4><ul><li>[2-3 important TOK/{{subj}} terms]</li></ul>
 
 No asterisks. Output only the HTML above.`,
   },
 };
 
-function getSysPrompt(tab, qCount, isFinal) {
+function getSysPrompt(tab, qCount, isFinal, subject) {
   const p = PROMPTS[tab];
   if (!p) return null;
-  if (isFinal) return p.final;
-  if (tab === 'tok') {
-    if (qCount === 0) return p.intro;
-    if (qCount === 1) return p.askTitle;
-    return p.guide;
+  let tpl;
+  if (isFinal) tpl = p.final;
+  else if (tab === 'tok') {
+    tpl = (qCount === 0) ? p.intro : (qCount === 1 ? p.askTitle : p.guide);
+  } else {
+    tpl = (qCount === 0) ? p.intro : p.guide;
   }
-  return qCount === 0 ? p.intro : p.guide;
+  return tpl ? applySubject(tpl, subject) : null;
 }
 
 async function callGemini(geminiKey, sys, history) {
@@ -177,7 +219,7 @@ module.exports = async function mentorRoutes(app) {
   }, async (req, reply) => {
     const student = await requireStudent(req, reply, 1);
     if (!student) return;
-    const { tab, qCount, history, geminiKey, isFinal } = req.body || {};
+    const { tab, qCount, history, geminiKey, isFinal, subject } = req.body || {};
 
     if (!tab || !['ia', 'ee', 'tok'].includes(tab)) {
       return reply.status(400).send({ error: 'Invalid tab. Must be ia, ee, or tok.' });
@@ -193,7 +235,8 @@ module.exports = async function mentorRoutes(app) {
       return reply.status(400).send({ error: 'History too long.' });
     }
 
-    const sys = getSysPrompt(tab, qCount || 0, !!isFinal);
+    const subjKey = SUBJECTS[String(subject || '').toLowerCase()] ? String(subject).toLowerCase() : 'physics';
+    const sys = getSysPrompt(tab, qCount || 0, !!isFinal, subjKey);
     if (!sys) return reply.status(400).send({ error: 'Could not resolve system prompt.' });
 
     try {
